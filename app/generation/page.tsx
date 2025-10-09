@@ -62,10 +62,7 @@ function AISandboxPage() {
   const [aiEnabled] = useState(true);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [aiModel, setAiModel] = useState(() => {
-    const modelParam = searchParams.get('model');
-    return appConfig.ai.availableModels.includes(modelParam || '') ? modelParam! : appConfig.ai.defaultModel;
-  });
+  const [aiModel, setAiModel] = useState(appConfig.ai.defaultModel);
   const [urlOverlayVisible, setUrlOverlayVisible] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [urlStatus, setUrlStatus] = useState<string[]>([]);
@@ -3091,11 +3088,9 @@ Focus on the key sections and content, making it clean and modern.`;
             }}
             className="px-3 py-1.5 text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-300 transition-colors"
           >
-            {appConfig.ai.availableModels.map(model => (
-              <option key={model} value={model}>
-                {appConfig.ai.modelDisplayNames?.[model] || model}
-              </option>
-            ))}
+            <option value={appConfig.ai.defaultModel}>
+              {appConfig.ai.modelDisplayNames?.[appConfig.ai.defaultModel] || appConfig.ai.defaultModel}
+            </option>
           </select>
           <button 
             onClick={() => createSandbox()}

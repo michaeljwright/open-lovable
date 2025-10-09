@@ -53,18 +53,7 @@ export function getPrompts(config) {
 export function getEnvPrompts(provider) {
   const prompts = [];
 
-  // Always include Firecrawl API key
-  prompts.push({
-    type: 'input',
-    name: 'firecrawlApiKey',
-    message: 'Firecrawl API key (for web scraping):',
-    validate: (input) => {
-      if (!input || input.trim() === '') {
-        return 'Firecrawl API key is required for web scraping functionality';
-      }
-      return true;
-    }
-  });
+  // No Firecrawl required
 
   if (provider === 'e2b') {
     prompts.push({

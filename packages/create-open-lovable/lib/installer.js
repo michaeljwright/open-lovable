@@ -142,9 +142,7 @@ async function createEnvFile(projectPath, sandbox, answers) {
   envContent += `# Sandbox Provider\n`;
   envContent += `SANDBOX_PROVIDER=${sandbox}\n\n`;
   
-  // Required keys
-  envContent += `# REQUIRED - Web scraping for cloning websites\n`;
-  envContent += `FIRECRAWL_API_KEY=${answers.firecrawlApiKey || 'your_firecrawl_api_key_here'}\n\n`;
+  // No web scraping keys required
   
   if (sandbox === 'e2b') {
     envContent += `# REQUIRED - E2B Sandboxes\n`;
@@ -198,9 +196,7 @@ async function createEnvExample(projectPath, sandbox) {
   envContent += `# Sandbox Provider\n`;
   envContent += `SANDBOX_PROVIDER=${sandbox}\n\n`;
   
-  envContent += `# REQUIRED - Web scraping for cloning websites\n`;
-  envContent += `# Get yours at https://firecrawl.dev\n`;
-  envContent += `FIRECRAWL_API_KEY=your_firecrawl_api_key_here\n\n`;
+  // No web scraping keys required
   
   if (sandbox === 'e2b') {
     envContent += `# REQUIRED - Sandboxes for code execution\n`;

@@ -76,10 +76,10 @@ export default function HomePage() {
     { id: "8", name: "Retro Wave", description: "80s inspired" },
   ];
 
-  const models = appConfig.ai.availableModels.map(model => ({
-    id: model,
-    name: appConfig.ai.modelDisplayNames[model] || model,
-  }));
+  const models = [{
+    id: appConfig.ai.defaultModel,
+    name: appConfig.ai.modelDisplayNames[appConfig.ai.defaultModel] || appConfig.ai.defaultModel,
+  }];
 
   const handleSubmit = async (selectedResult?: SearchResult) => {
     const inputValue = url.trim();
@@ -246,13 +246,7 @@ export default function HomePage() {
               <p className="text-center text-body-large">
                 Re-imagine any website, in seconds.
               </p>
-              <Link
-                className="bg-black-alpha-4 hover:bg-black-alpha-6 rounded-6 px-8 lg:px-6 text-label-large h-30 lg:h-24 block mt-8 mx-auto w-max gap-4 transition-all"
-                href="#"
-                onClick={(e) => e.preventDefault()}
-              >
-                Powered by Firecrawl.
-              </Link>
+              
             </div>
           </div>
 
