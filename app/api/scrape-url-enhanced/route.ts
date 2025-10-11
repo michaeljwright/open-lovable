@@ -27,11 +27,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    console.log('[scrape-url-enhanced] Scraping disabled; returning stub for:', url);
-    const sanitizedMarkdown = '';
-    const title = '';
-    const description = '';
-    const screenshotUrl = null;
+    // If Firecrawl disabled (default), return stub
+    if (process.env.FIRECRAWL_DISABLED !== 'false') {
+      console.log('[scrape-url-enhanced] Scraping disabled; returning stub for:', url);
+      const sanitizedMarkdown = '';
+      const title = '';
+      const description = '';
+      const screenshotUrl = null;
     
     // Format content for AI
     const formattedContent = `
@@ -43,26 +45,51 @@ Main Content:
 ${sanitizedMarkdown}
     `.trim();
     
-    return NextResponse.json({
-      success: true,
-      url,
-      content: formattedContent,
-      screenshot: screenshotUrl,
-      structured: {
-        title: sanitizeQuotes(title),
-        description: sanitizeQuotes(description),
-        content: sanitizedMarkdown,
+      return NextResponse.json({
+        success: true,
         url,
-        screenshot: screenshotUrl
+        content: formattedContent,
+        screenshot: screenshotUrl,
+        structured: {
+          title: sanitizeQuotes(title),
+          description: sanitizeQuotes(description),
+          content: sanitizedMarkdown,
+          url,
+          screenshot: screenshotUrl
+        },
+        metadata: {
+          scraper: 'stub',
+          timestamp: new Date().toISOString(),
+          contentLength: formattedContent.length,
+          cached: false
+        },
+        message: 'Scraping disabled; returned stubbed content'
+      });
+    }
+
+    // Original Firecrawl call (disabled by default)
+    const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
+    const firecrawlResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+        'Content-Type': 'application/json'
       },
-      metadata: {
-        scraper: 'stub',
-        timestamp: new Date().toISOString(),
-        contentLength: formattedContent.length,
-        cached: false
-      },
-      message: 'Scraping disabled; returned stubbed content'
+      body: JSON.stringify({
+        url,
+        formats: ['markdown', 'html', 'screenshot'],
+        waitFor: 3000,
+        timeout: 30000,
+        blockAds: true,
+        maxAge: 3600000,
+        actions: [
+          { type: 'wait', milliseconds: 2000 },
+          { type: 'screenshot', fullPage: false }
+        ]
+      })
     });
+    const data = await firecrawlResponse.json();
+    return NextResponse.json(data);
     
   } catch (error) {
     console.error('[scrape-url-enhanced] Error:', error);

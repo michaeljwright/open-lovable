@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-// Firecrawl dependency removed
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,21 +11,35 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Firecrawl removed. Return a stubbed response with empty content.
-    return NextResponse.json({
-      success: true,
-      data: {
-        title: "",
-        content: "",
-        description: "",
-        markdown: "",
-        html: "",
-        metadata: { sourceURL: url, statusCode: 200 },
-        screenshot: null,
-        links: [],
-        raw: null
-      }
+    // Bypass Firecrawl by default unless explicitly enabled
+    if (process.env.FIRECRAWL_DISABLED !== 'false') {
+      return NextResponse.json({
+        success: true,
+        data: {
+          title: "",
+          content: "",
+          description: "",
+          markdown: "",
+          html: "",
+          metadata: { sourceURL: url, statusCode: 200 },
+          screenshot: null,
+          links: [],
+          raw: null
+        }
+      });
+    }
+
+    // Original Firecrawl path (disabled by default)
+    const searchResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.FIRECRAWL_API_KEY}`,
+      },
+      body: JSON.stringify({ url, formats, ...options })
     });
+    const data = await searchResponse.json();
+    return NextResponse.json({ success: true, data });
     
   } catch (error) {
     console.error("Error scraping website:", error);
