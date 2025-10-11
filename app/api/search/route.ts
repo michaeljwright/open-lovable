@@ -3,16 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(req: NextRequest) {
   try {
     const { query } = await req.json();
+    
     if (!query) {
       return NextResponse.json({ error: 'Query is required' }, { status: 400 });
     }
 
-    // Bypass Firecrawl by default unless explicitly enabled
-    if (process.env.FIRECRAWL_DISABLED !== 'false') {
-      return NextResponse.json({ results: [] });
-    }
-
-    // Original Firecrawl-based search (disabled by default)
+    // Use Firecrawl search to get top 10 results with screenshots
     const searchResponse = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: {
@@ -34,6 +30,8 @@ export async function POST(req: NextRequest) {
     }
 
     const searchData = await searchResponse.json();
+    
+    // Format results with screenshots and markdown
     const results = searchData.data?.map((result: any) => ({
       url: result.url,
       title: result.title || result.url,
@@ -44,6 +42,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ results });
   } catch (error) {
-    return NextResponse.json({ results: [] });
+    console.error('Search error:', error);
+    return NextResponse.json(
+      { error: 'Failed to perform search' },
+      { status: 500 }
+    );
   }
 }
