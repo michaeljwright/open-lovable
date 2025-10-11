@@ -1,6 +1,7 @@
 "use client";
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
+import '@measured/puck/puck.css';
 
 // Lazy load Puck to avoid SSR issues
 const PuckEditor: any = dynamic(
@@ -58,7 +59,25 @@ export default function EditPage() {
         console.log('[EditPage] Evaluated config:', evaluatedConfig);
         console.log('[EditPage] Config components:', Object.keys(evaluatedConfig.components || {}));
 
-        setConfig(evaluatedConfig);
+        // Convert render function strings to actual functions
+        const processedConfig = { ...evaluatedConfig };
+        if (processedConfig.components) {
+          Object.keys(processedConfig.components).forEach(componentName => {
+            const component = processedConfig.components[componentName];
+            if (component.render && typeof component.render === 'string') {
+              try {
+                console.log(`[EditPage] Converting render function for ${componentName}...`);
+                const renderFn = new Function('React', `return ${component.render}`);
+                component.render = renderFn(React);
+                console.log(`[EditPage] ✓ Converted render function for ${componentName}`);
+              } catch (e: any) {
+                console.error(`[EditPage] Failed to convert render for ${componentName}:`, e.message);
+              }
+            }
+          });
+        }
+
+        setConfig(processedConfig);
       } catch (e: any) {
         console.error('[EditPage] Failed to load config:', e);
         console.error('[EditPage] Error message:', e.message);
