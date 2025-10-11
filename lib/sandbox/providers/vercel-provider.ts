@@ -447,7 +447,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <div className="text-center max-w-2xl">
         <p className="text-lg text-gray-400">
           Vercel Sandbox Ready<br/>
-          Start building your React app with Vite and Tailwind CSS!
+          Now copying over your code and site data...
         </p>
       </div>
     </div>
