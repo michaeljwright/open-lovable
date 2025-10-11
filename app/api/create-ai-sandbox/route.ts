@@ -240,7 +240,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           Sandbox Ready
         </h1>
         <p className="text-lg text-gray-400">
-          Start building your React app with Vite and Tailwind CSS!
+          Now copying over your code and site data...
         </p>
       </div>
     </div>

@@ -81,6 +81,21 @@ export default function HomePage() {
           console.log('[HomePage] Storing siteConfig in sessionStorage, length:', data.puck.configJs.length);
           sessionStorage.setItem('siteConfig', data.puck.configJs);
 
+          // Store the original prompt for context
+          sessionStorage.setItem('originalPrompt', inputValue);
+
+          // Store initial chat history
+          const initialChat = [{
+            content: `Creating a site: ${inputValue}`,
+            type: 'user',
+            timestamp: new Date().toISOString()
+          }, {
+            content: `I've generated your site with ${Object.keys(data.puck.data.content || []).length} components. You can now edit it visually or chat with me to make changes.`,
+            type: 'ai',
+            timestamp: new Date().toISOString()
+          }];
+          sessionStorage.setItem('chatHistory', JSON.stringify(initialChat));
+
           toast.success('Site generated successfully!', { id: 'creating' });
 
           console.log('[HomePage] Redirecting to /edit...');

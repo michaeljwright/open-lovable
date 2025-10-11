@@ -44,6 +44,31 @@ interface ChatMessage {
   };
 }
 
+// Helper function to generate descriptions for Puck components
+function getComponentDescription(componentType: string, props: any): string {
+  // Extract key information from props to show what was generated
+  if (componentType === 'Hero' || componentType === 'HeroSection') {
+    return props.title || props.heading || 'Landing section';
+  } else if (componentType === 'Features' || componentType === 'FeatureSection') {
+    return props.title || 'Features showcase';
+  } else if (componentType === 'About' || componentType === 'AboutSection') {
+    return props.title || 'About section';
+  } else if (componentType === 'Testimonials' || componentType === 'TestimonialSection') {
+    return props.title || 'Customer testimonials';
+  } else if (componentType === 'Pricing' || componentType === 'PricingSection') {
+    return props.title || 'Pricing tiers';
+  } else if (componentType === 'CTA' || componentType === 'CallToAction') {
+    return props.title || props.text || 'Call to action';
+  } else if (componentType === 'Footer') {
+    return 'Footer with links';
+  } else if (componentType === 'Header' || componentType === 'Navigation') {
+    return 'Navigation header';
+  }
+
+  // Generic fallback
+  return props.title || props.heading || props.name || 'Section';
+}
+
 function AISandboxPage() {
   const [sandboxData, setSandboxData] = useState<SandboxData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -148,12 +173,40 @@ function AISandboxPage() {
     const initializePage = async () => {
       // Prevent double execution in React StrictMode
       if (sandboxCreated) return;
-      
+
+      // Check if returning from Puck editor
+      const returningFromEditor = sessionStorage.getItem('returningFromEditor');
+      const storedChatHistory = sessionStorage.getItem('chatHistory');
+      const storedPrompt = sessionStorage.getItem('originalPrompt');
+      const siteData = sessionStorage.getItem('siteData');
+      const siteConfig = sessionStorage.getItem('siteConfig');
+
+      // If returning from editor, restore chat context
+      if (returningFromEditor && storedChatHistory) {
+        try {
+          const chatHistory = JSON.parse(storedChatHistory);
+          // Restore chat messages
+          const restoredMessages = chatHistory.map((msg: any) => ({
+            content: msg.content,
+            type: msg.type,
+            timestamp: new Date(msg.timestamp)
+          }));
+          setChatMessages(restoredMessages);
+
+          // Clear the flag
+          sessionStorage.removeItem('returningFromEditor');
+
+          console.log('[generation] Restored chat history with', chatHistory.length, 'messages');
+        } catch (e) {
+          console.error('[generation] Failed to restore chat history:', e);
+        }
+      }
+
       // First check URL parameters (from home page navigation)
       const urlParam = searchParams.get('url');
       const templateParam = searchParams.get('template');
       const detailsParam = searchParams.get('details');
-      
+
       // Then check session storage as fallback
       const storedUrl = urlParam || sessionStorage.getItem('targetUrl');
       const storedStyle = templateParam || sessionStorage.getItem('selectedStyle');
@@ -247,18 +300,83 @@ function AISandboxPage() {
       
       setLoading(true);
       try {
+        let createdSandboxData = null;
         if (sandboxIdParam) {
           console.log('[home] Attempting to restore sandbox:', sandboxIdParam);
           // For now, just create a new sandbox - you could enhance this to actually restore
           // the specific sandbox if your backend supports it
           sandboxCreated = true;
-          await createSandbox(true);
+          createdSandboxData = await createSandbox(true);
         } else {
           console.log('[home] No sandbox in URL, creating new sandbox automatically...');
           sandboxCreated = true;
-          await createSandbox(true);
+          createdSandboxData = await createSandbox(true);
         }
-        
+
+        // Apply Puck data to sandbox if available (either from initial creation or returning from editor)
+        if (siteData && siteConfig && createdSandboxData) {
+          console.log('[generation] Applying Puck data to sandbox...');
+          console.log('[generation] returningFromEditor:', returningFromEditor);
+
+          try {
+            const applyResponse = await fetch('/api/apply-puck-data', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                puckData: JSON.parse(siteData),
+                puckConfig: siteConfig,
+                sandboxId: createdSandboxData.sandboxId
+              })
+            });
+
+            if (applyResponse.ok) {
+              const result = await applyResponse.json();
+              console.log('[generation] Puck data applied successfully:', result);
+
+              // Update sandbox data state with the returned data
+              if (result.sandboxId && result.url) {
+                setSandboxData({
+                  sandboxId: result.sandboxId,
+                  url: result.url
+                });
+              }
+
+              // Add a message to chat
+              if (isMounted) {
+                const message = returningFromEditor === 'true'
+                  ? `Applied your published site changes! Your site is now live in the sandbox.`
+                  : `Your site has been loaded into the editor sandbox. You can now view and edit it.`;
+                addChatMessage(message, 'system');
+              }
+
+              // Refresh the iframe to show the updated content
+              // Give the sandbox more time to install packages and compile
+              setTimeout(() => {
+                if (iframeRef.current && result.url) {
+                  console.log('[generation] Refreshing iframe with URL:', result.url);
+                  iframeRef.current.src = result.url;
+                }
+              }, 3000); // Increased from 1000ms to 3000ms
+            } else {
+              const errorText = await applyResponse.text();
+              console.error('[generation] Failed to apply Puck data:', errorText);
+              if (isMounted) {
+                addChatMessage('Failed to apply visual editor changes to sandbox.', 'error');
+              }
+            }
+          } catch (applyError) {
+            console.error('[generation] Error applying Puck data:', applyError);
+            if (isMounted) {
+              addChatMessage('Error applying visual editor changes.', 'error');
+            }
+          }
+
+          // Clear the flag after processing
+          if (returningFromEditor) {
+            sessionStorage.removeItem('returningFromEditor');
+          }
+        }
+
         // If we have a URL from the home page, mark for automatic start
         if (storedUrl && isMounted) {
           // We'll trigger the generation after the component is fully mounted
@@ -521,14 +639,37 @@ function AISandboxPage() {
     updateStatus('Creating sandbox...', false);
     setResponseArea([]);
     setScreenshotError(null);
-    
+
+    // Add chat message for user visibility
+    if (!fromHomeScreen) {
+      addChatMessage('Creating sandbox environment...', 'system');
+    }
+
+    // Show progressive status updates
+    const statusUpdates = [
+      { delay: 2000, message: 'Setting up container...' },
+      { delay: 4000, message: 'Installing dependencies...' },
+      { delay: 6000, message: 'Starting development server...' }
+    ];
+
+    const timeouts: NodeJS.Timeout[] = [];
+    statusUpdates.forEach(update => {
+      const timeout = setTimeout(() => {
+        updateStatus(update.message, false);
+      }, update.delay);
+      timeouts.push(timeout);
+    });
+
     try {
       const response = await fetch('/api/create-ai-sandbox-v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       });
-      
+
+      // Clear all pending status updates
+      timeouts.forEach(clearTimeout);
+
       const data = await response.json();
       console.log('[createSandbox] Response data:', data);
       
@@ -544,7 +685,6 @@ function AISandboxPage() {
         // Update URL with sandbox ID
         const newParams = new URLSearchParams(searchParams.toString());
         newParams.set('sandbox', data.sandboxId);
-        newParams.set('model', aiModel);
         router.push(`/generation?${newParams.toString()}`, { scroll: false });
         
         // Fade out loading background after sandbox loads
@@ -583,6 +723,9 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         throw new Error(data.error || 'Unknown error');
       }
     } catch (error: any) {
+      // Clear all pending status updates on error
+      timeouts.forEach(clearTimeout);
+
       console.error('[createSandbox] Error:', error);
       updateStatus('Error', false);
       log(`Failed to create sandbox: ${error.message}`, 'error');
@@ -1687,7 +1830,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
             </div>
           ) : (
             <div className="text-gray-500 text-center">
-              <p className="text-sm">Start chatting to create your first app</p>
+              <p className="text-sm">Setting up your app sandbox...</p>
             </div>
           )}
         </div>
@@ -1775,317 +1918,140 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       console.log('[chat] - sandboxId:', fullContext.sandboxId);
       console.log('[chat] - isEdit:', conversationContext.appliedCode.length > 0);
       
-      const response = await fetch('/api/generate-ai-code-stream', {
+      // Use new Puck-based generation
+      setGenerationProgress(prev => ({
+        ...prev,
+        status: 'Analyzing your request...',
+        isThinking: true,
+        thinkingText: 'Planning website structure...'
+      }));
+
+      addChatMessage('Generating your website with the visual editor...', 'system');
+
+      const response = await fetch('/api/generate-puck-site', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: message,
-          model: aiModel,
-          context: fullContext,
-          isEdit: conversationContext.appliedCode.length > 0
+          context: fullContext
         })
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let generatedCode = '';
-      let explanation = '';
-      let buffer = ''; // Buffer for incomplete lines
-      
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value, { stream: true });
-          console.log('[chat] Received chunk:', chunk.length, 'bytes');
-          buffer += chunk;
-          const lines = buffer.split('\n');
-          
-          // Keep the last line in buffer if it's incomplete
-          buffer = lines.pop() || '';
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                
-                if (data.type === 'status') {
-                  setGenerationProgress(prev => ({ ...prev, status: data.message }));
-                } else if (data.type === 'thinking') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
-                    isThinking: true,
-                    thinkingText: (prev.thinkingText || '') + data.text
-                  }));
-                } else if (data.type === 'thinking_complete') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
-                    isThinking: false,
-                    thinkingDuration: data.duration
-                  }));
-                } else if (data.type === 'conversation') {
-                  // Add conversational text to chat only if it's not code
-                  let text = data.text || '';
-                  
-                  // Remove package tags from the text
-                  text = text.replace(/<package>[^<]*<\/package>/g, '');
-                  text = text.replace(/<packages>[^<]*<\/packages>/g, '');
-                  
-                  // Filter out any XML tags and file content that slipped through
-                  if (!text.includes('<file') && !text.includes('import React') && 
-                      !text.includes('export default') && !text.includes('className=') &&
-                      text.trim().length > 0) {
-                    addChatMessage(text.trim(), 'ai');
-                  }
-                } else if (data.type === 'stream' && data.raw) {
-                  setGenerationProgress(prev => {
-                    const newStreamedCode = prev.streamedCode + data.text;
-                    
-                    // Tab is already switched after scraping
-                    
-                    const updatedState = { 
-                      ...prev, 
-                      streamedCode: newStreamedCode,
-                      isStreaming: true,
-                      isThinking: false,
-                      status: 'Generating code...'
-                    };
-                    
-                    // Process complete files from the accumulated stream
-                    const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
-                    let match;
-                    const processedFiles = new Set(prev.files.map(f => f.path));
-                    
-                    while ((match = fileRegex.exec(newStreamedCode)) !== null) {
-                      const filePath = match[1];
-                      const fileContent = match[2];
-                      
-                      // Only add if we haven't processed this file yet
-                      if (!processedFiles.has(filePath)) {
-                        const fileExt = filePath.split('.').pop() || '';
-                        const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
-                        // Check if file already exists
-                        const existingFileIndex = updatedState.files.findIndex(f => f.path === filePath);
-                        
-                        if (existingFileIndex >= 0) {
-                          // Update existing file and mark as edited
-                          updatedState.files = [
-                            ...updatedState.files.slice(0, existingFileIndex),
-                            {
-                              ...updatedState.files[existingFileIndex],
-                              content: fileContent.trim(),
-                              type: fileType,
-                              completed: true,
-                              edited: true
-                            },
-                            ...updatedState.files.slice(existingFileIndex + 1)
-                          ];
-                        } else {
-                          // Add new file
-                          updatedState.files = [...updatedState.files, {
-                            path: filePath,
-                            content: fileContent.trim(),
-                            type: fileType,
-                            completed: true,
-                            edited: false
-                          }];
-                        }
-                        
-                        // Only show file status if not in edit mode
-                        if (!prev.isEdit) {
-                          updatedState.status = `Completed ${filePath}`;
-                        }
-                        processedFiles.add(filePath);
-                      }
-                    }
-                    
-                    // Check for current file being generated (incomplete file at the end)
-                    const lastFileMatch = newStreamedCode.match(/<file path="([^"]+)">([^]*?)$/);
-                    if (lastFileMatch && !lastFileMatch[0].includes('</file>')) {
-                      const filePath = lastFileMatch[1];
-                      const partialContent = lastFileMatch[2];
-                      
-                      if (!processedFiles.has(filePath)) {
-                        const fileExt = filePath.split('.').pop() || '';
-                        const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                        fileExt === 'css' ? 'css' :
-                                        fileExt === 'json' ? 'json' :
-                                        fileExt === 'html' ? 'html' : 'text';
-                        
-                        updatedState.currentFile = { 
-                          path: filePath, 
-                          content: partialContent, 
-                          type: fileType 
-                        };
-                        // Only show file status if not in edit mode
-                        if (!prev.isEdit) {
-                          updatedState.status = `Generating ${filePath}`;
-                        }
-                      }
-                    } else {
-                      updatedState.currentFile = undefined;
-                    }
-                    
-                    return updatedState;
-                  });
-                } else if (data.type === 'app') {
-                  setGenerationProgress(prev => ({ 
-                    ...prev, 
-                    status: 'Generated App.jsx structure'
-                  }));
-                } else if (data.type === 'component') {
-                  setGenerationProgress(prev => ({
-                    ...prev,
-                    status: `Generated ${data.name}`,
-                    components: [...prev.components, { 
-                      name: data.name, 
-                      path: data.path, 
-                      completed: true 
-                    }],
-                    currentComponent: data.index
-                  }));
-                } else if (data.type === 'package') {
-                  // Handle package installation from tool calls
-                  setGenerationProgress(prev => ({
-                    ...prev,
-                    status: data.message || `Installing ${data.name}`
-                  }));
-                } else if (data.type === 'complete') {
-                  generatedCode = data.generatedCode;
-                  explanation = data.explanation;
-                  
-                  // Save the last generated code
-                  setConversationContext(prev => ({
-                    ...prev,
-                    lastGeneratedCode: generatedCode
-                  }));
-                  
-                  // Clear thinking state when generation completes
-                  setGenerationProgress(prev => ({
-                    ...prev,
-                    isThinking: false,
-                    thinkingText: undefined,
-                    thinkingDuration: undefined
-                  }));
-                  
-                  // Store packages to install from tool calls
-                  if (data.packagesToInstall && data.packagesToInstall.length > 0) {
-                    console.log('[generate-code] Packages to install from tools:', data.packagesToInstall);
-                    // Store packages globally for later installation
-                    (window as any).pendingPackages = data.packagesToInstall;
-                  }
-                  
-                  // Parse all files from the completed code if not already done
-                  const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
-                  const parsedFiles: Array<{path: string; content: string; type: string; completed: boolean}> = [];
-                  let fileMatch;
-                  
-                  while ((fileMatch = fileRegex.exec(data.generatedCode)) !== null) {
-                    const filePath = fileMatch[1];
-                    const fileContent = fileMatch[2];
-                    const fileExt = filePath.split('.').pop() || '';
-                    const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                    fileExt === 'css' ? 'css' :
-                                    fileExt === 'json' ? 'json' :
-                                    fileExt === 'html' ? 'html' : 'text';
-                    
-                    parsedFiles.push({
-                      path: filePath,
-                      content: fileContent.trim(),
-                      type: fileType,
-                      completed: true
-                    });
-                  }
-                  
-                  setGenerationProgress(prev => ({
-                    ...prev,
-                    status: `Generated ${parsedFiles.length > 0 ? parsedFiles.length : prev.files.length} file${(parsedFiles.length > 0 ? parsedFiles.length : prev.files.length) !== 1 ? 's' : ''}!`,
-                    isGenerating: false,
-                    isStreaming: false,
-                    isEdit: prev.isEdit,
-                    // Keep the files that were already parsed during streaming
-                    files: prev.files.length > 0 ? prev.files : parsedFiles
-                  }));
-                } else if (data.type === 'error') {
-                  throw new Error(data.error);
-                }
-              } catch (e) {
-                console.error('Failed to parse SSE data:', e);
-              }
-            }
+
+      const result = await response.json();
+
+      if (!result.success || !result.puck) {
+        throw new Error(result.error || 'Failed to generate site');
+      }
+
+      // Store Puck data in sessionStorage
+      console.log('[chat] Storing Puck data in sessionStorage');
+      sessionStorage.setItem('siteData', JSON.stringify(result.puck.data));
+      sessionStorage.setItem('siteConfig', result.puck.configJs);
+
+      setGenerationProgress(prev => ({
+        ...prev,
+        status: 'Website structure created',
+        isThinking: false,
+        isGenerating: false,
+        isStreaming: false
+      }));
+
+      // Show what was generated in the chat
+      const componentNames = Object.keys(result.puck.config.components);
+      const sectionCount = result.puck.data.content.length;
+
+      addChatMessage(
+        `I've created a visual website with ${sectionCount} section${sectionCount !== 1 ? 's' : ''}:\n\n` +
+        result.puck.data.content.map((item: any, idx: number) =>
+          `${idx + 1}. **${item.type}** - ${getComponentDescription(item.type, item.props)}`
+        ).join('\n') +
+        `\n\nYou can edit any of these sections using the visual editor. Just click "Open Editor" to customize your site!`,
+        'ai'
+      );
+
+      // Wait for sandbox creation if it's still in progress
+      let activeSandboxData = sandboxData;
+      if (sandboxPromise) {
+        addChatMessage('Waiting for sandbox to be ready...', 'system');
+        try {
+          const newSandboxData = await sandboxPromise;
+          if (newSandboxData != null) {
+            activeSandboxData = newSandboxData;
+            // Also update the state for future use
+            setSandboxData(newSandboxData);
           }
+          // Remove the waiting message
+          setChatMessages(prev => prev.filter(msg => msg.content !== 'Waiting for sandbox to be ready...'));
+        } catch {
+          addChatMessage('Sandbox creation failed. Cannot apply code.', 'system');
+          return;
         }
       }
-      
-      if (generatedCode) {
-        // Parse files from generated code for metadata
-        const fileRegex = /<file path="([^"]+)">([^]*?)<\/file>/g;
-        const generatedFiles = [];
-        let match;
-        while ((match = fileRegex.exec(generatedCode)) !== null) {
-          generatedFiles.push(match[1]);
+
+      if (activeSandboxData) {
+        // For new sandbox creations, add a delay to ensure Vite is ready
+        if (sandboxCreating) {
+          console.log('[chat] New sandbox created, waiting for services to be ready...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        
-        // Show appropriate message based on edit mode
-        if (isEdit && generatedFiles.length > 0) {
-          // For edits, show which file(s) were edited
-          const editedFileNames = generatedFiles.map(f => f.split('/').pop()).join(', ');
-          addChatMessage(
-            explanation || `Updated ${editedFileNames}`,
-            'ai',
-            {
-              appliedFiles: [generatedFiles[0]] // Only show the first edited file
-            }
-          );
-        } else {
-          // For new generation, show all files
-          addChatMessage(explanation || 'Code generated!', 'ai', {
-            appliedFiles: generatedFiles
+
+        // Apply Puck data to sandbox
+        console.log('[chat] Applying Puck data to sandbox...');
+        setGenerationProgress(prev => ({ ...prev, status: 'Setting up your site in the sandbox...' }));
+
+        addChatMessage('Setting up the visual editor environment...', 'system');
+
+        try {
+          const applyResponse = await fetch('/api/apply-puck-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              puckData: result.puck.data,
+              puckConfig: result.puck.configJs,
+              sandboxId: activeSandboxData.sandboxId
+            })
           });
-        }
-        
-        setPromptInput(generatedCode);
-        // Don't show the Generated Code panel by default
-        // setLeftPanelVisible(true);
-        
-        // Wait for sandbox creation if it's still in progress
-        let activeSandboxData = sandboxData;
-        if (sandboxPromise) {
-          addChatMessage('Waiting for sandbox to be ready...', 'system');
-          try {
-            const newSandboxData = await sandboxPromise;
-            if (newSandboxData != null) {
-              activeSandboxData = newSandboxData;
-              // Also update the state for future use
-              setSandboxData(newSandboxData);
+
+          if (applyResponse.ok) {
+            const applyResult = await applyResponse.json();
+            console.log('[chat] Puck data applied successfully:', applyResult);
+
+            // Update sandbox data state with the returned data
+            if (applyResult.sandboxId && applyResult.url) {
+              setSandboxData({
+                sandboxId: applyResult.sandboxId,
+                url: applyResult.url
+              });
             }
-            // Remove the waiting message
-            setChatMessages(prev => prev.filter(msg => msg.content !== 'Waiting for sandbox to be ready...'));
-          } catch {
-            addChatMessage('Sandbox creation failed. Cannot apply code.', 'system');
-            return;
+
+            addChatMessage(
+              '✓ Your site is now live! The preview will load shortly.\n\n' +
+              'You can now:\n' +
+              '- Click **"Open Editor"** to visually edit any section\n' +
+              '- Chat with me to make changes\n' +
+              '- Preview your site in the iframe on the right',
+              'system'
+            );
+
+            // Refresh the iframe to show the updated content
+            setTimeout(() => {
+              if (iframeRef.current && applyResult.url) {
+                console.log('[chat] Refreshing iframe with URL:', applyResult.url);
+                iframeRef.current.src = applyResult.url;
+              }
+            }, 3000);
+          } else {
+            const errorText = await applyResponse.text();
+            console.error('[chat] Failed to apply Puck data:', errorText);
+            addChatMessage('Failed to apply visual editor data to sandbox.', 'error');
           }
-        }
-        
-        if (activeSandboxData && generatedCode) {
-          // For new sandbox creations (especially Vercel), add a delay to ensure Vite is ready
-          if (sandboxCreating) {
-            console.log('[startGeneration] New sandbox created, waiting for services to be ready...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-          
-          // Use isEdit flag that was determined at the start
-          // Pass the sandbox data from the promise if it's different from the state
-          await applyGeneratedCode(generatedCode, isEdit, activeSandboxData !== sandboxData ? activeSandboxData : undefined);
+        } catch (applyError) {
+          console.error('[chat] Error applying Puck data:', applyError);
+          addChatMessage('Error applying visual editor data.', 'error');
         }
       }
       
@@ -3073,25 +3039,6 @@ Focus on the key sections and content, making it clean and modern.`;
       <div className="bg-white py-[15px] py-[8px] border-b border-border-faint flex items-center justify-between shadow-sm">
         <HeaderBrandKit />
         <div className="flex items-center gap-2">
-          {/* Model Selector - Left side */}
-          <select
-            value={aiModel}
-            onChange={(e) => {
-              const newModel = e.target.value;
-              setAiModel(newModel);
-              const params = new URLSearchParams(searchParams);
-              params.set('model', newModel);
-              if (sandboxData?.sandboxId) {
-                params.set('sandbox', sandboxData.sandboxId);
-              }
-              router.push(`/generation?${params.toString()}`);
-            }}
-            className="px-3 py-1.5 text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-300 transition-colors"
-          >
-            <option value={appConfig.ai.defaultModel}>
-              {appConfig.ai.modelDisplayNames?.[appConfig.ai.defaultModel] || appConfig.ai.defaultModel}
-            </option>
-          </select>
           <button 
             onClick={() => createSandbox()}
             className="p-8 rounded-lg transition-colors bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100"
@@ -3111,7 +3058,7 @@ Focus on the key sections and content, making it clean and modern.`;
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
-          <button 
+          <button
             onClick={downloadZip}
             disabled={!sandboxData}
             className="p-8 rounded-lg transition-colors bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -3121,7 +3068,14 @@ Focus on the key sections and content, making it clean and modern.`;
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
             </svg>
           </button>
-       
+          <button
+            onClick={() => router.push('/edit')}
+            className="px-3 py-1.5 rounded-lg transition-colors bg-indigo-600 text-white hover:bg-indigo-700 text-sm font-medium"
+            title="Open Visual Editor"
+          >
+            Open Editor
+          </button>
+
         </div>
       </div>
 
