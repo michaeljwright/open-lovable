@@ -16,43 +16,13 @@ import Guidelines from "./_svg/Guidelines";
 import Icon from "./_svg/Icon";
 
 export default function HeaderBrandKit() {
-  const [open, setOpen] = useState(false);
-  const { dropdownContent, clearDropdown } = useHeaderContext();
-
-  useEffect(() => {
-    document.addEventListener("click", () => {
-      setOpen(false);
-    });
-  }, [open]);
-
-  useEffect(() => {
-    if (dropdownContent) {
-      setOpen(false);
-    }
-  }, [dropdownContent]);
-
   return (
-    <div className="relative">
-      <Link
-        className="flex items-center gap-2 relative brand-kit-menu"
-        href="/"
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setOpen(!open);
-
-          if (!open) {
-            clearDropdown(true);
-          }
-        }}
-      >
-        
-        <Logo />
-      </Link>
-
-      <AnimatePresence initial={false} mode="popLayout">
-        {open && <Menu setOpen={setOpen} />}
-      </AnimatePresence>
-    </div>
+    <Link
+      className="flex items-center gap-2"
+      href="/"
+    >
+      <img src="/penultimate.png" alt="Logo" style={{ height: '60px', width: 'auto' }} />
+    </Link>
   );
 }
 

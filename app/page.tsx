@@ -135,10 +135,8 @@ export default function HomePage() {
           </div>
 
           <HeaderWrapper>
-            <div className="max-w-[900px] mx-auto w-full flex justify-between items-center">
-              <div className="flex gap-24 items-center">
-                <HeaderBrandKit />
-              </div>
+            <div className="max-w-[900px] mx-auto w-full flex justify-center items-center">
+              <HeaderBrandKit />
             </div>
           </HeaderWrapper>
         </div>

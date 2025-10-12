@@ -128,9 +128,7 @@ export default function EditPage() {
         chatButton.className = `custom-chat-button ${chatOpen ? 'active' : ''}`;
         chatButton.title = 'AI Assistant';
         chatButton.innerHTML = `
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
+          <img src="/penultimate-small.png" alt="Logo" style="width: 32px; height: auto;" />
         `;
         chatButton.onclick = () => setChatOpen(!chatOpen);
         leftSidebar.insertBefore(chatButton, leftSidebar.firstChild);
