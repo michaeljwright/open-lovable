@@ -84,11 +84,23 @@ const PuckEditor: any = dynamic(
   }
 );
 
+interface ChatMessage {
+  content: string;
+  type: 'user' | 'ai' | 'system' | 'error';
+  timestamp: Date;
+}
+
 export default function EditPage() {
   const [data, setData] = useState<any>({ content: [], root: { props: { title: 'My Site', theme: 'light' } }, zones: {} });
   const [config, setConfig] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [puckKey, setPuckKey] = useState(0); // Key to force Puck re-render
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [messagesEndRef, setMessagesEndRef] = useState<HTMLDivElement | null>(null);
+  const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
   const router = useRouter();
 
   // Inject custom styles and chat button into Puck's DOM
@@ -142,6 +154,39 @@ export default function EditPage() {
       }
     };
   }, [config, chatOpen]);
+
+  // Load chat history from sessionStorage
+  useEffect(() => {
+    if (chatHistoryLoaded) return;
+
+    const storedChatHistory = sessionStorage.getItem('editPageChatHistory');
+    if (storedChatHistory) {
+      try {
+        const parsedHistory = JSON.parse(storedChatHistory);
+        console.log('[EditPage] Loaded chat history:', parsedHistory.length, 'messages');
+        setChatMessages(parsedHistory.map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        })));
+      } catch (e) {
+        console.error('[EditPage] Failed to parse chat history:', e);
+        // Start with default message
+        setChatMessages([{
+          content: 'Hi! I can help you edit your site. Just tell me what you want to change.',
+          type: 'ai',
+          timestamp: new Date()
+        }]);
+      }
+    } else {
+      // Start with default message
+      setChatMessages([{
+        content: 'Hi! I can help you edit your site. Just tell me what you want to change.',
+        type: 'ai',
+        timestamp: new Date()
+      }]);
+    }
+    setChatHistoryLoaded(true);
+  }, [chatHistoryLoaded]);
 
   useEffect(() => {
     console.log('[EditPage] Loading site data from sessionStorage...');
@@ -261,6 +306,149 @@ export default function EditPage() {
     router.push('/generation');
   };
 
+  const addChatMessage = (content: string, type: ChatMessage['type']) => {
+    setChatMessages(prev => {
+      const newMessages = [...prev, {
+        content,
+        type,
+        timestamp: new Date()
+      }];
+      // Save to sessionStorage
+      sessionStorage.setItem('editPageChatHistory', JSON.stringify(newMessages));
+      return newMessages;
+    });
+  };
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, messagesEndRef]);
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || isProcessing) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput('');
+
+    // Add user message
+    addChatMessage(userMessage, 'user');
+    setIsProcessing(true);
+
+    try {
+      // Show progressive status updates
+      addChatMessage('Analyzing your request...', 'system');
+
+      // Short delay to show first status
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setChatMessages(prev => prev.filter(msg => msg.content !== 'Analyzing your request...'));
+      addChatMessage('Updating site structure...', 'system');
+
+      // Call the update-puck-site API
+      const response = await fetch('/api/update-puck-site', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: userMessage,
+          currentData: data,
+          currentConfig: config
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success || !result.puck) {
+        throw new Error(result.error || 'Failed to update site');
+      }
+
+      // Update the Puck data
+      console.log('[EditPage] Updating Puck data from AI response');
+      setChatMessages(prev => {
+        const filtered = prev.filter(msg => msg.content !== 'Analyzing your request...' && msg.content !== 'Updating site structure...');
+        sessionStorage.setItem('editPageChatHistory', JSON.stringify(filtered));
+        return filtered;
+      });
+      addChatMessage('Applying changes to editor...', 'system');
+
+      // Force Puck to re-render by updating the key
+      setPuckKey(prev => prev + 1);
+      setData(result.puck.data);
+
+      // Save to sessionStorage
+      sessionStorage.setItem('siteData', JSON.stringify(result.puck.data));
+
+      // Update config if needed
+      if (result.puck.configJs) {
+        sessionStorage.setItem('siteConfig', result.puck.configJs);
+
+        // Re-evaluate config
+        const React = require('react');
+        const configCode = result.puck.configJs.replace(/^export\s+(const|let|var)\s+config\s*=\s*/, '');
+        const fn = new Function('React', `return ${configCode}`);
+        const evaluatedConfig = fn(React);
+
+        // Convert render functions
+        const processedConfig = { ...evaluatedConfig };
+        if (processedConfig.components) {
+          Object.keys(processedConfig.components).forEach(componentName => {
+            const component = processedConfig.components[componentName];
+            if (component.render && typeof component.render === 'string') {
+              try {
+                const renderFn = new Function('React', `return ${component.render}`);
+                component.render = renderFn(React);
+              } catch (e: any) {
+                console.error(`Failed to convert render for ${componentName}:`, e.message);
+              }
+            }
+          });
+        }
+
+        // Force Puck to re-render with new config by incrementing key again
+        setPuckKey(prev => prev + 1);
+        setConfig(processedConfig);
+      }
+
+      // Remove all processing messages and show success
+      setChatMessages(prev => {
+        const filtered = prev.filter(msg =>
+          msg.content !== 'Analyzing your request...' &&
+          msg.content !== 'Updating site structure...' &&
+          msg.content !== 'Applying changes to editor...'
+        );
+        sessionStorage.setItem('editPageChatHistory', JSON.stringify(filtered));
+        return filtered;
+      });
+
+      // Generate a friendly summary message
+      const updatedSections = result.puck.data.content?.length || 0;
+      const componentTypes = result.puck.data.content?.map((item: any) => item.type).join(', ') || 'components';
+      addChatMessage(
+        `✓ Successfully updated your site!\n\n` +
+        `Your site now has ${updatedSections} section${updatedSections !== 1 ? 's' : ''}: ${componentTypes}`,
+        'system'
+      );
+
+    } catch (err: any) {
+      console.error('[EditPage] Chat error:', err);
+      // Remove all processing messages
+      setChatMessages(prev => {
+        const filtered = prev.filter(msg =>
+          msg.content !== 'Analyzing your request...' &&
+          msg.content !== 'Updating site structure...' &&
+          msg.content !== 'Applying changes to editor...'
+        );
+        sessionStorage.setItem('editPageChatHistory', JSON.stringify(filtered));
+        return filtered;
+      });
+      addChatMessage(`Error: ${err.message}`, 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div style={{ minHeight: '100vh', position: 'relative', display: 'flex' }}>
       {/* Chat Panel - Puck-styled sidebar */}
@@ -293,7 +481,7 @@ export default function EditPage() {
                 fontSize: '14px',
                 fontWeight: '600',
                 color: '#111827',
-              }}>AI Assistant</span>
+              }}>Edit by chatting with AI</span>
             </div>
             <button
               onClick={() => setChatOpen(false)}
@@ -323,31 +511,32 @@ export default function EditPage() {
             flexDirection: 'column',
             gap: '12px',
           }}>
-            {/* Sample Messages */}
-            <div style={{
-              backgroundColor: 'white',
-              padding: '12px',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb',
-              fontSize: '13px',
-              color: '#374151',
-            }}>
-              <div style={{ fontWeight: '600', marginBottom: '4px', color: '#6366f1' }}>AI Assistant</div>
-              <div>How can I help you edit your site today?</div>
-            </div>
-
-            <div style={{
-              backgroundColor: '#f3f4f6',
-              padding: '12px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              color: '#374151',
-              marginLeft: 'auto',
-              maxWidth: '80%',
-            }}>
-              <div style={{ fontWeight: '600', marginBottom: '4px', color: '#111827' }}>You</div>
-              <div>Change the hero title to "Welcome to My App"</div>
-            </div>
+            {chatMessages.map((msg, idx) => (
+              <div
+                key={idx}
+                style={{
+                  backgroundColor: msg.type === 'user' ? '#f3f4f6' : 'white',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: msg.type === 'user' ? 'none' : '1px solid #e5e7eb',
+                  fontSize: '13px',
+                  color: msg.type === 'error' ? '#dc2626' : '#374151',
+                  marginLeft: msg.type === 'user' ? 'auto' : '0',
+                  maxWidth: msg.type === 'user' ? '80%' : '100%',
+                }}
+              >
+                <div style={{
+                  fontWeight: '600',
+                  marginBottom: '4px',
+                  color: msg.type === 'user' ? '#111827' : '#6366f1'
+                }}>
+                  {msg.type === 'user' ? 'You' : 'AI Assistant'}
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+              </div>
+            ))}
+            {/* Invisible element at the end for auto-scrolling */}
+            <div ref={setMessagesEndRef} />
           </div>
 
           {/* Chat Input Area */}
@@ -362,7 +551,16 @@ export default function EditPage() {
               alignItems: 'flex-end',
             }}>
               <textarea
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
                 placeholder="Ask AI to edit your site..."
+                disabled={isProcessing}
                 style={{
                   flex: 1,
                   padding: '8px 12px',
@@ -373,21 +571,26 @@ export default function EditPage() {
                   fontFamily: 'inherit',
                   minHeight: '40px',
                   maxHeight: '120px',
+                  opacity: isProcessing ? 0.6 : 1,
                 }}
                 rows={1}
               />
-              <button style={{
-                padding: '8px 16px',
-                backgroundColor: '#6366f1',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '500',
-                height: '40px',
-              }}>
-                Chat
+              <button
+                onClick={handleSendMessage}
+                disabled={isProcessing || !chatInput.trim()}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: isProcessing || !chatInput.trim() ? '#9ca3af' : '#6366f1',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: isProcessing || !chatInput.trim() ? 'not-allowed' : 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  height: '40px',
+                }}
+              >
+                {isProcessing ? 'Processing...' : 'Send'}
               </button>
             </div>
           </div>
@@ -408,7 +611,7 @@ export default function EditPage() {
             <a href="/" style={{color: 'blue', textDecoration: 'underline'}}>Go back to home</a>
           </div>
         ) : config ? (
-          <PuckEditor config={config} data={data} onPublish={handlePublish} />
+          <PuckEditor key={puckKey} config={config} data={data} onPublish={handlePublish} />
         ) : (
           <div style={{padding:24}}>Loading editor…</div>
         )}
