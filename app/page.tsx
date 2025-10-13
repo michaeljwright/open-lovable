@@ -153,7 +153,7 @@ export default function HomePage() {
               <HomeHeroBadge />
               <HomeHeroTitle />
               <p className="text-center text-body-large">
-                Re-imagine any website, in seconds.
+                Create any website, in seconds.
               </p>
               
             </div>
