@@ -3,26 +3,22 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { appConfig } from '@/config/app.config';
-import HeroInput from '@/components/HeroInput';
-import SidebarInput from '@/components/app/generation/SidebarInput';
-import HeaderBrandKit from '@/components/shared/header/BrandKit/BrandKit';
+import Link from 'next/link';
 import { HeaderProvider } from '@/components/shared/header/HeaderContext';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 // Import icons from centralized module to avoid Turbopack chunk issues
-import { 
-  FiFile, 
-  FiChevronRight, 
+import {
+  FiFile,
+  FiChevronRight,
   FiChevronDown,
-  FiGithub,
-  BsFolderFill, 
+  BsFolderFill,
   BsFolder2Open,
-  SiJavascript, 
-  SiReact, 
-  SiCss3, 
-  SiJson 
+  SiJavascript,
+  SiReact,
+  SiCss3,
+  SiJson
 } from '@/lib/icons';
-import { motion } from 'framer-motion';
 import CodeApplicationProgress, { type CodeApplicationState } from '@/components/CodeApplicationProgress';
 
 interface SandboxData {
@@ -3036,357 +3032,8 @@ Focus on the key sections and content, making it clean and modern.`;
   return (
     <HeaderProvider>
       <div className="font-sans bg-background text-foreground h-screen flex flex-col">
-      <div className="bg-white py-[15px] py-[8px] border-b border-border-faint flex items-center justify-between shadow-sm">
-        <HeaderBrandKit />
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => createSandbox()}
-            className="p-8 rounded-lg transition-colors bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100"
-            title="Create new sandbox"
-          >
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-          <button 
-            onClick={reapplyLastGeneration}
-            className="p-8 rounded-lg transition-colors bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Re-apply last generation"
-            disabled={!conversationContext.lastGeneratedCode || !sandboxData}
-          >
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-          <button
-            onClick={downloadZip}
-            disabled={!sandboxData}
-            className="p-8 rounded-lg transition-colors bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Download your Vite app as ZIP"
-          >
-            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-            </svg>
-          </button>
-          <button
-            onClick={() => router.push('/edit')}
-            className="px-3 py-1.5 rounded-lg transition-colors bg-indigo-600 text-white hover:bg-indigo-700 text-sm font-medium"
-            title="Open Visual Editor"
-          >
-            Open Editor
-          </button>
-
-        </div>
-      </div>
-
       <div className="flex-1 flex overflow-hidden">
-        {/* Center Panel - AI Chat (1/3 of remaining width) */}
-        <div className="flex-1 max-w-[400px] flex flex-col border-r border-border bg-background">
-          {/* Sidebar Input Component */}
-          {!hasInitialSubmission ? (
-            <div className="p-4 border-b border-border">
-              <SidebarInput
-                onSubmit={(url, style, model, instructions) => {
-                  // Mark that we've had an initial submission
-                  setHasInitialSubmission(true);
-                  
-                  // Store the configuration in sessionStorage (same as home page)
-                  sessionStorage.setItem('targetUrl', url);
-                  sessionStorage.setItem('selectedStyle', style);
-                  sessionStorage.setItem('selectedModel', model);
-                  if (instructions) {
-                    sessionStorage.setItem('additionalInstructions', instructions);
-                  }
-                  sessionStorage.setItem('autoStart', 'true');
-                  
-                  // Start generation using the existing logic
-                  setHomeUrlInput(url);
-                  setHomeContextInput(instructions || '');
-                  startGeneration();
-                }}
-                disabled={loading || generationProgress.isGenerating}
-              />
-            </div>
-          ) : null}
-
-          {conversationContext.scrapedWebsites.length > 0 && (
-            <div className="p-4 bg-card border-b border-gray-200">
-              <div className="flex flex-col gap-4">
-                {conversationContext.scrapedWebsites.map((site, idx) => {
-                  // Extract favicon and site info from the scraped data
-                  const metadata = site.content?.metadata || {};
-                  const sourceURL = metadata.sourceURL || site.url;
-                  const favicon = metadata.favicon || `https://www.google.com/s2/favicons?domain=${new URL(sourceURL).hostname}&sz=128`;
-                  const siteName = metadata.ogSiteName || metadata.title || new URL(sourceURL).hostname;
-                  const screenshot = site.content?.screenshot || sessionStorage.getItem('websiteScreenshot');
-                  
-                  return (
-                    <div key={idx} className="flex flex-col gap-3">
-                      {/* Site info with favicon */}
-                      <div className="flex items-center gap-4 text-sm">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img 
-                          src={favicon} 
-                          alt={siteName}
-                          className="w-16 h-16 rounded"
-                          onError={(e) => {
-                            e.currentTarget.src = `https://www.google.com/s2/favicons?domain=${new URL(sourceURL).hostname}&sz=128`;
-                          }}
-                        />
-                        <a 
-                          href={sourceURL} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-black hover:text-gray-700 truncate max-w-[250px] font-medium"
-                          title={sourceURL}
-                        >
-                          {siteName}
-                        </a>
-                      </div>
-                      
-                      {/* Pinned screenshot */}
-                      {screenshot && (
-                        <div 
-                          className="w-full rounded-lg overflow-hidden border border-gray-200 transition-all duration-300"
-                          style={{ 
-                            opacity: sidebarScrolled ? 0 : 1,
-                            transform: sidebarScrolled ? 'translateY(-20px)' : 'translateY(0)',
-                            pointerEvents: sidebarScrolled ? 'none' : 'auto',
-                            maxHeight: sidebarScrolled ? '0' : '200px'
-                          }}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img 
-                            src={screenshot}
-                            alt={`${siteName} preview`}
-                            className="w-full h-auto object-cover"
-                            style={{ maxHeight: '200px' }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div 
-            className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 scrollbar-hide" 
-            ref={chatMessagesRef}
-            onScroll={(e) => {
-              const scrollTop = e.currentTarget.scrollTop;
-              setSidebarScrolled(scrollTop > 50);
-            }}>
-            {chatMessages.map((msg, idx) => {
-              // Check if this message is from a successful generation
-              const isGenerationComplete = msg.content.includes('Successfully recreated') || 
-                                         msg.content.includes('AI recreation generated!') ||
-                                         msg.content.includes('Code generated!');
-              
-              // Get the files from metadata if this is a completion message
-              // const completedFiles = msg.metadata?.appliedFiles || [];
-              
-              return (
-                <div key={idx} className="block">
-                  <div className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className="block">
-                      <div className={`block rounded-[10px] px-14 py-8 ${
-                        msg.type === 'user' ? 'bg-[#36322F] text-white ml-auto max-w-[80%]' :
-                        msg.type === 'ai' ? 'bg-gray-100 text-gray-900 mr-auto max-w-[80%]' :
-                        msg.type === 'system' ? 'bg-[#36322F] text-white text-sm' :
-                        msg.type === 'command' ? 'bg-[#36322F] text-white font-mono text-sm' :
-                        msg.type === 'error' ? 'bg-red-900 text-red-100 text-sm border border-red-700' :
-                        'bg-[#36322F] text-white text-sm'
-                      }`}>
-                    {msg.type === 'command' ? (
-                      <div className="flex items-start gap-2">
-                        <span className={`text-xs ${
-                          msg.metadata?.commandType === 'input' ? 'text-blue-400' :
-                          msg.metadata?.commandType === 'error' ? 'text-red-400' :
-                          msg.metadata?.commandType === 'success' ? 'text-green-400' :
-                          'text-gray-400'
-                        }`}>
-                          {msg.metadata?.commandType === 'input' ? '$' : '>'}
-                        </span>
-                        <span className="flex-1 whitespace-pre-wrap text-white">{msg.content}</span>
-                      </div>
-                    ) : msg.type === 'error' ? (
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-red-800 rounded-full flex items-center justify-center">
-                            <svg className="w-6 h-6 text-red-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                          </div>
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-semibold mb-1">Build Errors Detected</div>
-                          <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
-                          <div className="mt-2 text-xs opacity-70">Press 'F' or click the Fix button above to resolve</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-body-input">{msg.content}</span>
-                    )}
-                      </div>
-                  
-                      {/* Show applied files if this is an apply success message */}
-                      {msg.metadata?.appliedFiles && msg.metadata.appliedFiles.length > 0 && (
-                    <div className="mt-3 inline-block bg-gray-100 rounded-[10px] p-5">
-                      <div className="text-xs font-medium mb-3 text-gray-700">
-                        {msg.content.includes('Applied') ? 'Files Updated:' : 'Generated Files:'}
-                      </div>
-                      <div className="flex flex-wrap items-start gap-2">
-                        {msg.metadata.appliedFiles.map((filePath, fileIdx) => {
-                          const fileName = filePath.split('/').pop() || filePath;
-                          const fileExt = fileName.split('.').pop() || '';
-                          const fileType = fileExt === 'jsx' || fileExt === 'js' ? 'javascript' :
-                                          fileExt === 'css' ? 'css' :
-                                          fileExt === 'json' ? 'json' : 'text';
-                          
-                          return (
-                            <div
-                              key={`applied-${fileIdx}`}
-                              className="inline-flex items-center gap-1.5 px-6 py-1.5 bg-[#36322F] text-white rounded-[10px] text-xs animate-fade-in-up"
-                              style={{ animationDelay: `${fileIdx * 30}ms` }}
-                            >
-                              <span className={`inline-block w-1.5 h-1.5 rounded-full ${
-                                fileType === 'css' ? 'bg-blue-400' :
-                                fileType === 'javascript' ? 'bg-yellow-400' :
-                                fileType === 'json' ? 'bg-green-400' :
-                                'bg-gray-400'
-                              }`} />
-                              {fileName}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  
-                      {/* Show generated files for completion messages - but only if no appliedFiles already shown */}
-                      {isGenerationComplete && generationProgress.files.length > 0 && idx === chatMessages.length - 1 && !msg.metadata?.appliedFiles && !chatMessages.some(m => m.metadata?.appliedFiles) && (
-                    <div className="mt-2 inline-block bg-gray-100 rounded-[10px] p-3">
-                      <div className="text-xs font-medium mb-1 text-gray-700">Generated Files:</div>
-                      <div className="flex flex-wrap items-start gap-1">
-                        {generationProgress.files.map((file, fileIdx) => (
-                          <div
-                            key={`complete-${fileIdx}`}
-                            className="inline-flex items-center gap-1.5 px-6 py-1.5 bg-[#36322F] text-white rounded-[10px] text-xs animate-fade-in-up"
-                            style={{ animationDelay: `${fileIdx * 30}ms` }}
-                          >
-                            <span className={`inline-block w-1.5 h-1.5 rounded-full ${
-                              file.type === 'css' ? 'bg-blue-400' :
-                              file.type === 'javascript' ? 'bg-yellow-400' :
-                              file.type === 'json' ? 'bg-green-400' :
-                              'bg-gray-400'
-                            }`} />
-                            {file.path.split('/').pop()}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                    </div>
-                    </div>
-                  </div>
-              );
-            })}
-            
-            {/* Code application progress */}
-            {codeApplicationState.stage && (
-              <CodeApplicationProgress state={codeApplicationState} />
-            )}
-            
-            {/* File generation progress - inline display (during generation) */}
-            {generationProgress.isGenerating && (
-              <div className="inline-block bg-gray-100 rounded-lg p-3">
-                <div className="text-sm font-medium mb-2 text-gray-700">
-                  {generationProgress.status}
-                </div>
-                <div className="flex flex-wrap items-start gap-1">
-                  {/* Show completed files */}
-                  {generationProgress.files.map((file, idx) => (
-                    <div
-                      key={`file-${idx}`}
-                      className="inline-flex items-center gap-1.5 px-6 py-1.5 bg-[#36322F] text-white rounded-[10px] text-xs animate-fade-in-up"
-                      style={{ animationDelay: `${idx * 30}ms` }}
-                    >
-                      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                      {file.path.split('/').pop()}
-                    </div>
-                  ))}
-                  
-                  {/* Show current file being generated */}
-                  {generationProgress.currentFile && (
-                    <div className="flex items-center gap-1 px-2 py-1 bg-[#36322F]/70 text-white rounded-[10px] text-xs animate-pulse"
-                      style={{ animationDelay: `${generationProgress.files.length * 30}ms` }}>
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      {generationProgress.currentFile.path.split('/').pop()}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Live streaming response display */}
-                {generationProgress.streamedCode && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="mt-3 border-t border-gray-300 pt-3"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                        <span className="text-xs font-medium text-gray-600">AI Response Stream</span>
-                      </div>
-                      <div className="flex-1 h-px bg-gradient-to-r from-gray-300 to-transparent" />
-                    </div>
-                    <div className="bg-gray-900 border border-gray-700 rounded max-h-128 overflow-y-auto scrollbar-hide">
-                      <SyntaxHighlighter
-                        language="jsx"
-                        style={vscDarkPlus}
-                        customStyle={{
-                          margin: 0,
-                          padding: '0.75rem',
-                          fontSize: '11px',
-                          lineHeight: '1.5',
-                          background: 'transparent',
-                          maxHeight: '8rem',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        {(() => {
-                          const lastContent = generationProgress.streamedCode.slice(-1000);
-                          // Show the last part of the stream, starting from a complete tag if possible
-                          const startIndex = lastContent.indexOf('<');
-                          return startIndex !== -1 ? lastContent.slice(startIndex) : lastContent;
-                        })()}
-                      </SyntaxHighlighter>
-                      <span className="inline-block w-3 h-4 bg-orange-400 ml-3 mb-3 animate-pulse" />
-                    </div>
-                  </motion.div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="p-4 border-t border-border bg-background-base">
-            <HeroInput
-              value={aiChatInput}
-              onChange={setAiChatInput}
-              onSubmit={sendChatMessage}
-              placeholder="Describe what you want to build..."
-              showSearchFeatures={false}
-            />
-          </div>
-        </div>
-
-        {/* Right Panel - Preview or Generation (2/3 of remaining width) */}
+        {/* Main Panel - Preview or Generation (full width) */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="px-3 pt-4 pb-4 bg-white border-b border-gray-200 flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -3426,6 +3073,26 @@ Focus on the key sections and content, making it clean and modern.`;
               </div>
             </div>
             <div className="flex gap-2 items-center">
+              <button 
+                onClick={reapplyLastGeneration}
+                className="p-8 rounded-lg transition-colors bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Re-apply last generation"
+                disabled={!conversationContext.lastGeneratedCode || !sandboxData}
+              >
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <button
+                onClick={downloadZip}
+                disabled={!sandboxData}
+                className="p-8 rounded-lg transition-colors bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Download your Vite app as ZIP"
+              >
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                </svg>
+              </button>
               {/* Files generated count */}
               {activeTab === 'generation' && !generationProgress.isEdit && generationProgress.files.length > 0 && (
                 <div className="text-gray-500 text-xs font-medium">

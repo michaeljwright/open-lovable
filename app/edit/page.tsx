@@ -288,10 +288,10 @@ export default function EditPage() {
       console.error('[EditPage] Failed to update chat history:', e);
     }
 
-    console.log('[EditPage] Site published successfully, navigating to generation page...');
+    console.log('[EditPage] Site published successfully, opening generation page in new tab...');
 
-    // Navigate to generation/chat page
-    router.push('/generation');
+    // Open generation page in a new tab
+    window.open('/generation', '_blank');
   };
 
   const handleBackToChat = () => {
