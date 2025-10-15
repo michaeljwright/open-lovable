@@ -19,15 +19,10 @@ import HomeHeroBadge from "@/components/app/(home)/sections/hero/Badge/Badge";
 import HomeHeroPixi from "@/components/app/(home)/sections/hero/Pixi/Pixi";
 import HomeHeroTitle from "@/components/app/(home)/sections/hero/Title/Title";
 import HeroInputSubmitButton from "@/components/app/(home)/sections/hero-input/Button/Button";
-// import Globe from "@/components/app/(home)/sections/hero-input/_svg/Globe";
 
 // Import header components
-import HeaderBrandKit from "@/components/shared/header/BrandKit/BrandKit";
 import HeaderWrapper from "@/components/shared/header/Wrapper/Wrapper";
 import HeaderDropdownWrapper from "@/components/shared/header/Dropdown/Wrapper/Wrapper";
-import GithubIcon from "@/components/shared/header/Github/_svg/GithubIcon";
-import ButtonUI from "@/components/ui/shadcn/button"
-
 
 export default function HomePage() {
   const [prompt, setPrompt] = useState<string>("");
@@ -136,7 +131,12 @@ export default function HomePage() {
 
           <HeaderWrapper>
             <div className="max-w-[900px] mx-auto w-full flex justify-center items-center">
-              <HeaderBrandKit />
+              <Link
+                className="flex items-center gap-2"
+                href="/"
+              >
+                <img src="/penultimate.png" alt="Logo" style={{ height: '60px', width: 'auto' }} />
+              </Link>
             </div>
           </HeaderWrapper>
         </div>
