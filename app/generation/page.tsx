@@ -27,19 +27,6 @@ interface SandboxData {
   [key: string]: any;
 }
 
-interface ChatMessage {
-  content: string;
-  type: 'user' | 'ai' | 'system' | 'file-update' | 'command' | 'error';
-  timestamp: Date;
-  metadata?: {
-    scrapedUrl?: string;
-    scrapedContent?: any;
-    generatedCode?: string;
-    appliedFiles?: string[];
-    commandType?: 'input' | 'output' | 'error' | 'success';
-  };
-}
-
 // Helper function to generate descriptions for Puck components
 function getComponentDescription(componentType: string, props: any): string {
   // Extract key information from props to show what was generated
@@ -72,14 +59,6 @@ function AISandboxPage() {
   const [responseArea, setResponseArea] = useState<string[]>([]);
   const [structureContent, setStructureContent] = useState('No sandbox created yet');
   const [promptInput, setPromptInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      content: 'Welcome! I can help you generate code with full context of your sandbox files and structure. Just start chatting - I\'ll automatically create a sandbox for you if needed!\n\nTip: If you see package errors like "react-router-dom not found", just type "npm install" or "check packages" to automatically install missing packages.',
-      type: 'system',
-      timestamp: new Date()
-    }
-  ]);
-  const [aiChatInput, setAiChatInput] = useState('');
   const [aiEnabled] = useState(true);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -125,7 +104,6 @@ function AISandboxPage() {
   });
   
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const chatMessagesRef = useRef<HTMLDivElement>(null);
   const codeDisplayRef = useRef<HTMLDivElement>(null);
   
   const [codeApplicationState, setCodeApplicationState] = useState<CodeApplicationState>({
@@ -172,30 +150,13 @@ function AISandboxPage() {
 
       // Check if returning from Puck editor
       const returningFromEditor = sessionStorage.getItem('returningFromEditor');
-      const storedChatHistory = sessionStorage.getItem('chatHistory');
       const storedPrompt = sessionStorage.getItem('originalPrompt');
       const siteData = sessionStorage.getItem('siteData');
       const siteConfig = sessionStorage.getItem('siteConfig');
 
-      // If returning from editor, restore chat context
-      if (returningFromEditor && storedChatHistory) {
-        try {
-          const chatHistory = JSON.parse(storedChatHistory);
-          // Restore chat messages
-          const restoredMessages = chatHistory.map((msg: any) => ({
-            content: msg.content,
-            type: msg.type,
-            timestamp: new Date(msg.timestamp)
-          }));
-          setChatMessages(restoredMessages);
-
-          // Clear the flag
-          sessionStorage.removeItem('returningFromEditor');
-
-          console.log('[generation] Restored chat history with', chatHistory.length, 'messages');
-        } catch (e) {
-          console.error('[generation] Failed to restore chat history:', e);
-        }
+      // Clear the returning flag if set
+      if (returningFromEditor) {
+        sessionStorage.removeItem('returningFromEditor');
       }
 
       // First check URL parameters (from home page navigation)
@@ -284,9 +245,6 @@ function AISandboxPage() {
         console.log('[home] Cleared old conversation data on mount');
       } catch (error) {
         console.error('[ai-sandbox] Failed to clear old conversation:', error);
-        if (isMounted) {
-          addChatMessage('Failed to clear old conversation data.', 'error');
-        }
       }
       
       if (!isMounted) return;
@@ -337,12 +295,12 @@ function AISandboxPage() {
                 });
               }
 
-              // Add a message to chat
+              // Puck data applied successfully
               if (isMounted) {
                 const message = returningFromEditor === 'true'
                   ? `Applied your published site changes! Your site is now live in the sandbox.`
                   : `Your site has been loaded into the editor sandbox. You can now view and edit it.`;
-                addChatMessage(message, 'system');
+                console.log('[generation]', message);
               }
 
               // Refresh the iframe to show the updated content
@@ -356,15 +314,9 @@ function AISandboxPage() {
             } else {
               const errorText = await applyResponse.text();
               console.error('[generation] Failed to apply Puck data:', errorText);
-              if (isMounted) {
-                addChatMessage('Failed to apply visual editor changes to sandbox.', 'error');
-              }
             }
           } catch (applyError) {
             console.error('[generation] Error applying Puck data:', applyError);
-            if (isMounted) {
-              addChatMessage('Error applying visual editor changes.', 'error');
-            }
           }
 
           // Clear the flag after processing
@@ -381,9 +333,6 @@ function AISandboxPage() {
         }
       } catch (error) {
         console.error('[ai-sandbox] Failed to create or restore sandbox:', error);
-        if (isMounted) {
-          addChatMessage('Failed to create or restore sandbox.', 'error');
-        }
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -447,12 +396,6 @@ function AISandboxPage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (chatMessagesRef.current) {
-      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
-    }
-  }, [chatMessages]);
-
   // Auto-trigger generation when flag is set (from home page navigation)
   useEffect(() => {
     if (shouldAutoGenerate && homeUrlInput && !showHomeScreen) {
@@ -478,19 +421,6 @@ function AISandboxPage() {
     setResponseArea(prev => [...prev, `[${type}] ${message}`]);
   };
 
-  const addChatMessage = (content: string, type: ChatMessage['type'], metadata?: ChatMessage['metadata']) => {
-    setChatMessages(prev => {
-      // Skip duplicate consecutive system messages
-      if (type === 'system' && prev.length > 0) {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage.type === 'system' && lastMessage.content === content) {
-          return prev; // Skip duplicate
-        }
-      }
-      return [...prev, { content, type, timestamp: new Date(), metadata }];
-    });
-  };
-  
   const checkAndInstallPackages = async () => {
     // This function is only called when user explicitly requests it
     // Don't show error if no sandbox - it's likely being created
@@ -498,9 +428,9 @@ function AISandboxPage() {
       console.log('[checkAndInstallPackages] No sandbox data available yet');
       return;
     }
-    
+
     // Vite error checking removed - handled by template setup
-    addChatMessage('Checking packages... Sandbox is ready with Vite configuration.', 'system');
+    console.log('Checking packages... Sandbox is ready with Vite configuration.');
   };
   
   const handleSurfaceError = (_errors: any[]) => {
@@ -515,7 +445,7 @@ function AISandboxPage() {
   
   const installPackages = async (packages: string[]) => {
     if (!sandboxData) {
-      addChatMessage('No active sandbox. Create a sandbox first!', 'system');
+      console.error('No active sandbox. Create a sandbox first!');
       return;
     }
     
@@ -549,25 +479,25 @@ function AISandboxPage() {
                 case 'command':
                   // Don't show npm install commands - they're handled by info messages
                   if (!data.command.includes('npm install')) {
-                    addChatMessage(data.command, 'command', { commandType: 'input' });
+                    console.log('[command]', data.command);
                   }
                   break;
                 case 'output':
-                  addChatMessage(data.message, 'command', { commandType: 'output' });
+                  console.log('[output]', data.message);
                   break;
                 case 'error':
                   if (data.message && data.message !== 'undefined') {
-                    addChatMessage(data.message, 'command', { commandType: 'error' });
+                    console.error('[error]', data.message);
                   }
                   break;
                 case 'warning':
-                  addChatMessage(data.message, 'command', { commandType: 'output' });
+                  console.warn('[warning]', data.message);
                   break;
                 case 'success':
-                  addChatMessage(`${data.message}`, 'system');
+                  console.log('[success]', data.message);
                   break;
                 case 'status':
-                  addChatMessage(data.message, 'system');
+                  console.log('[status]', data.message);
                   break;
               }
             } catch (e) {
@@ -577,7 +507,7 @@ function AISandboxPage() {
         }
       }
     } catch (error: any) {
-      addChatMessage(`Failed to install packages: ${error.message}`, 'system');
+      console.error(`Failed to install packages: ${error.message}`);
     }
   };
 
@@ -635,11 +565,6 @@ function AISandboxPage() {
     updateStatus('Creating sandbox...', false);
     setResponseArea([]);
     setScreenshotError(null);
-
-    // Add chat message for user visibility
-    if (!fromHomeScreen) {
-      addChatMessage('Creating sandbox environment...', 'system');
-    }
 
     // Show progressive status updates
     const statusUpdates = [
@@ -699,14 +624,7 @@ function AISandboxPage() {
         // No need to restart it immediately after creation
         // Only restart if there's an actual issue later
         console.log('[createSandbox] Sandbox ready with Vite server running');
-        
-        // Only add welcome message if not coming from home screen
-        if (!fromHomeScreen) {
-          addChatMessage(`Sandbox created! ID: ${data.sandboxId}. I now have context of your sandbox and can help you build your app. Just ask me to create components and I'll automatically apply them!
 
-Tip: I automatically detect and install npm packages from your code imports (like react-router-dom, axios, etc.)`, 'system');
-        }
-        
         setTimeout(() => {
           if (iframeRef.current) {
             iframeRef.current.src = data.url;
@@ -725,7 +643,6 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       console.error('[createSandbox] Error:', error);
       updateStatus('Error', false);
       log(`Failed to create sandbox: ${error.message}`, 'error');
-      addChatMessage(`Failed to create sandbox: ${error.message}`, 'system');
       throw error;
     } finally {
       setLoading(false);
@@ -825,7 +742,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                 case 'command':
                   // Don't show npm install commands - they're handled by info messages
                   if (data.command && !data.command.includes('npm install')) {
-                    addChatMessage(data.command, 'command', { commandType: 'input' });
+                    console.log('[command]', data.command);
                   }
                   break;
                   
@@ -847,20 +764,22 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                   break;
                   
                 case 'command-progress':
-                  addChatMessage(`${data.action} command: ${data.command}`, 'command', { commandType: 'input' });
+                  console.log(`[${data.action}]`, data.command);
                   break;
-                  
+
                 case 'command-output':
-                  addChatMessage(data.output, 'command', { 
-                    commandType: data.stream === 'stderr' ? 'error' : 'output' 
-                  });
+                  if (data.stream === 'stderr') {
+                    console.error('[command-output]', data.output);
+                  } else {
+                    console.log('[command-output]', data.output);
+                  }
                   break;
-                  
+
                 case 'command-complete':
                   if (data.success) {
-                    addChatMessage(`Command completed successfully`, 'system');
+                    console.log('Command completed successfully');
                   } else {
-                    addChatMessage(`Command failed with exit code ${data.exitCode}`, 'system');
+                    console.error(`Command failed with exit code ${data.exitCode}`);
                   }
                   break;
                   
@@ -876,19 +795,19 @@ Tip: I automatically detect and install npm packages from your code imports (lik
                   break;
                   
                 case 'error':
-                  addChatMessage(`Error: ${data.message || data.error || 'Unknown error'}`, 'system');
+                  console.error(`Error: ${data.message || data.error || 'Unknown error'}`);
                   // Reset loading state on error
                   setLoading(false);
                   break;
-                  
+
                 case 'warning':
-                  addChatMessage(`${data.message}`, 'system');
+                  console.warn(data.message);
                   break;
-                  
+
                 case 'info':
                   // Show info messages, especially for package installation
                   if (data.message) {
-                    addChatMessage(data.message, 'system');
+                    console.log('[info]', data.message);
                   }
                   break;
               }
@@ -990,13 +909,10 @@ Tip: I automatically detect and install npm packages from your code imports (lik
           }
         } else if (data.warning) {
           log(data.warning, 'error');
-          
+
           if (data.missingImports && data.missingImports.length > 0) {
             const missingList = data.missingImports.join(', ');
-            addChatMessage(
-              `Ask me to "create the missing components: ${missingList}" to fix these import errors.`,
-              'system'
-            );
+            console.log(`Missing components: ${missingList}`);
           }
         }
         
@@ -1019,31 +935,16 @@ Tip: I automatically detect and install npm packages from your code imports (lik
             }]
           }));
           
-          // Update the chat message to show success
-          // Only show file list if not in edit mode
+          // Log success
           if (isEdit) {
-            addChatMessage(`Edit applied successfully!`, 'system');
+            console.log('Edit applied successfully!');
           } else {
-            // Check if this is part of a generation flow (has recent AI recreation message)
-            const recentMessages = chatMessages.slice(-5);
-            const isPartOfGeneration = recentMessages.some(m => 
-              m.content.includes('AI recreation generated') || 
-              m.content.includes('Code generated')
-            );
-            
-            // Don't show files if part of generation flow to avoid duplication
-            if (isPartOfGeneration) {
-              addChatMessage(`Applied ${results.filesCreated.length} files successfully!`, 'system');
-            } else {
-              addChatMessage(`Applied ${results.filesCreated.length} files successfully!`, 'system', {
-                appliedFiles: results.filesCreated
-              });
-            }
+            console.log(`Applied ${results.filesCreated.length} files successfully!`);
           }
-          
-          // If there are failed packages, add a message about checking for errors
+
+          // If there are failed packages, log warning
           if (results.packagesFailed?.length > 0) {
-            addChatMessage(`⚠️ Some packages failed to install. Check the error banner above for details.`, 'system');
+            console.warn('Some packages failed to install. Check the error banner above for details.');
           }
           
           // Fetch updated file structure
@@ -1169,7 +1070,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         }
       } else {
         // If no final data was received, still close loading
-        addChatMessage('Code application may have partially succeeded. Check the preview.', 'system');
+        console.warn('Code application may have partially succeeded. Check the preview.');
       }
     } catch (error: any) {
       log(`Failed to apply code: ${error.message}`, 'error');
@@ -1832,274 +1733,46 @@ Tip: I automatically detect and install npm packages from your code imports (lik
         </div>
       );
     }
+
+    // Fallback for when on generation tab but no files to show
+    if (activeTab === 'generation') {
+      return (
+        <div className="flex items-center justify-center h-full bg-gray-50">
+          <div className="text-center text-gray-500 max-w-md px-4">
+            <svg
+              className="w-16 h-16 mx-auto mb-4 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+              />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-700 mb-2">No code generated yet</h3>
+            <p className="text-sm text-gray-500">
+              Start a new generation or chat with the AI to create your site.
+              The code will appear here as it's being generated.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
-  const sendChatMessage = async () => {
-    const message = aiChatInput.trim();
-    if (!message) return;
-    
-    if (!aiEnabled) {
-      addChatMessage('AI is disabled. Please enable it first.', 'system');
-      return;
-    }
-    
-    addChatMessage(message, 'user');
-    setAiChatInput('');
-    
-    // Check for special commands
-    const lowerMessage = message.toLowerCase().trim();
-    if (lowerMessage === 'check packages' || lowerMessage === 'install packages' || lowerMessage === 'npm install') {
-      if (!sandboxData) {
-        // More helpful message - user might be trying to run this too early
-        addChatMessage('The sandbox is still being set up. Please wait for the generation to complete, then try again.', 'system');
-        return;
-      }
-      await checkAndInstallPackages();
-      return;
-    }
-    
-    // Start sandbox creation in parallel if needed
-    let sandboxPromise: Promise<void> | null = null;
-    let sandboxCreating = false;
-    
-    if (!sandboxData) {
-      sandboxCreating = true;
-      addChatMessage('Creating sandbox while I plan your app...', 'system');
-      sandboxPromise = createSandbox(true).catch((error: any) => {
-        addChatMessage(`Failed to create sandbox: ${error.message}`, 'system');
-        throw error;
-      });
-    }
-    
-    // Determine if this is an edit
-    const isEdit = conversationContext.appliedCode.length > 0;
-    
-    try {
-      // Generation tab is already active from scraping phase
-      setGenerationProgress(prev => ({
-        ...prev,  // Preserve all existing state
-        isGenerating: true,
-        status: 'Starting AI generation...',
-        components: [],
-        currentComponent: 0,
-        streamedCode: '',
-        isStreaming: false,
-        isThinking: true,
-        thinkingText: 'Analyzing your request...',
-        thinkingDuration: undefined,
-        currentFile: undefined,
-        lastProcessedPosition: 0,
-        // Add isEdit flag to generation progress
-        isEdit: isEdit,
-        // Keep existing files for edits - we'll mark edited ones differently
-        files: prev.files
-      }));
-      
-      // Backend now manages file state - no need to fetch from frontend
-      console.log('[chat] Using backend file cache for context');
-      
-      const fullContext = {
-        sandboxId: sandboxData?.sandboxId || (sandboxCreating ? 'pending' : null),
-        structure: structureContent,
-        recentMessages: chatMessages.slice(-20),
-        conversationContext: conversationContext,
-        currentCode: promptInput,
-        sandboxUrl: sandboxData?.url,
-        sandboxCreating: sandboxCreating
-      };
-      
-      // Debug what we're sending
-      console.log('[chat] Sending context to AI:');
-      console.log('[chat] - sandboxId:', fullContext.sandboxId);
-      console.log('[chat] - isEdit:', conversationContext.appliedCode.length > 0);
-      
-      // Use new Puck-based generation
-      setGenerationProgress(prev => ({
-        ...prev,
-        status: 'Analyzing your request...',
-        isThinking: true,
-        thinkingText: 'Planning website structure...'
-      }));
-
-      addChatMessage('Generating your website with the visual editor...', 'system');
-
-      const response = await fetch('/api/generate-puck-site', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: message,
-          context: fullContext
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      if (!result.success || !result.puck) {
-        throw new Error(result.error || 'Failed to generate site');
-      }
-
-      // Store Puck data in sessionStorage
-      console.log('[chat] Storing Puck data in sessionStorage');
-      sessionStorage.setItem('siteData', JSON.stringify(result.puck.data));
-      sessionStorage.setItem('siteConfig', result.puck.configJs);
-
-      setGenerationProgress(prev => ({
-        ...prev,
-        status: 'Website structure created',
-        isThinking: false,
-        isGenerating: false,
-        isStreaming: false
-      }));
-
-      // Show what was generated in the chat
-      const componentNames = Object.keys(result.puck.config.components);
-      const sectionCount = result.puck.data.content.length;
-
-      addChatMessage(
-        `I've created a visual website with ${sectionCount} section${sectionCount !== 1 ? 's' : ''}:\n\n` +
-        result.puck.data.content.map((item: any, idx: number) =>
-          `${idx + 1}. **${item.type}** - ${getComponentDescription(item.type, item.props)}`
-        ).join('\n') +
-        `\n\nYou can edit any of these sections using the visual editor. Just click "Open Editor" to customize your site!`,
-        'ai'
-      );
-
-      // Wait for sandbox creation if it's still in progress
-      let activeSandboxData = sandboxData;
-      if (sandboxPromise) {
-        addChatMessage('Waiting for sandbox to be ready...', 'system');
-        try {
-          const newSandboxData = await sandboxPromise;
-          if (newSandboxData != null) {
-            activeSandboxData = newSandboxData;
-            // Also update the state for future use
-            setSandboxData(newSandboxData);
-          }
-          // Remove the waiting message
-          setChatMessages(prev => prev.filter(msg => msg.content !== 'Waiting for sandbox to be ready...'));
-        } catch {
-          addChatMessage('Sandbox creation failed. Cannot apply code.', 'system');
-          return;
-        }
-      }
-
-      if (activeSandboxData) {
-        // For new sandbox creations, add a delay to ensure Vite is ready
-        if (sandboxCreating) {
-          console.log('[chat] New sandbox created, waiting for services to be ready...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-
-        // Apply Puck data to sandbox
-        console.log('[chat] Applying Puck data to sandbox...');
-        setGenerationProgress(prev => ({ ...prev, status: 'Setting up your site in the sandbox...' }));
-
-        addChatMessage('Setting up the visual editor environment...', 'system');
-
-        try {
-          const applyResponse = await fetch('/api/apply-puck-data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              puckData: result.puck.data,
-              puckConfig: result.puck.configJs,
-              sandboxId: activeSandboxData.sandboxId
-            })
-          });
-
-          if (applyResponse.ok) {
-            const applyResult = await applyResponse.json();
-            console.log('[chat] Puck data applied successfully:', applyResult);
-
-            // Update sandbox data state with the returned data
-            if (applyResult.sandboxId && applyResult.url) {
-              setSandboxData({
-                sandboxId: applyResult.sandboxId,
-                url: applyResult.url
-              });
-            }
-
-            addChatMessage(
-              '✓ Your site is now live! The preview will load shortly.\n\n' +
-              'You can now:\n' +
-              '- Click **"Open Editor"** to visually edit any section\n' +
-              '- Chat with me to make changes\n' +
-              '- Preview your site in the iframe on the right',
-              'system'
-            );
-
-            // Refresh the iframe to show the updated content
-            setTimeout(() => {
-              if (iframeRef.current && applyResult.url) {
-                console.log('[chat] Refreshing iframe with URL:', applyResult.url);
-                iframeRef.current.src = applyResult.url;
-              }
-            }, 3000);
-          } else {
-            const errorText = await applyResponse.text();
-            console.error('[chat] Failed to apply Puck data:', errorText);
-            addChatMessage('Failed to apply visual editor data to sandbox.', 'error');
-          }
-        } catch (applyError) {
-          console.error('[chat] Error applying Puck data:', applyError);
-          addChatMessage('Error applying visual editor data.', 'error');
-        }
-      }
-      
-      // Show completion status briefly then switch to preview
-      setGenerationProgress(prev => ({
-        ...prev,
-        isGenerating: false,
-        isStreaming: false,
-        status: 'Generation complete!',
-        isEdit: prev.isEdit,
-        // Clear thinking state on completion
-        isThinking: false,
-        thinkingText: undefined,
-        thinkingDuration: undefined
-      }));
-      
-      setTimeout(() => {
-        // Switch to preview but keep files for display
-        setActiveTab('preview');
-      }, 1000); // Reduced from 3000ms to 1000ms
-    } catch (error: any) {
-      setChatMessages(prev => prev.filter(msg => msg.content !== 'Thinking...'));
-      addChatMessage(`Error: ${error.message}`, 'system');
-      // Reset generation progress and switch back to preview on error
-      setGenerationProgress({
-        isGenerating: false,
-        status: '',
-        components: [],
-        currentComponent: 0,
-        streamedCode: '',
-        isStreaming: false,
-        isThinking: false,
-        thinkingText: undefined,
-        thinkingDuration: undefined,
-        files: [],
-        currentFile: undefined,
-        lastProcessedPosition: 0
-      });
-      setActiveTab('preview');
-    }
-  };
-
-
   const downloadZip = async () => {
     if (!sandboxData) {
-      addChatMessage('Please wait for the sandbox to be created before downloading.', 'system');
+      console.error('Please wait for the sandbox to be created before downloading.');
       return;
     }
-    
+
     setLoading(true);
     log('Creating zip file...');
-    addChatMessage('Creating ZIP file of your Vite app...', 'system');
     
     try {
       const response = await fetch('/api/create-zip', {
@@ -2111,29 +1784,22 @@ Tip: I automatically detect and install npm packages from your code imports (lik
       
       if (data.success) {
         log('Zip file created!');
-        addChatMessage('ZIP file created! Download starting...', 'system');
-        
+        console.log('ZIP file created! Download starting...');
+
         const link = document.createElement('a');
         link.href = data.dataUrl;
         link.download = data.fileName || 'e2b-project.zip';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
-        addChatMessage(
-          'Your Vite app has been downloaded! To run it locally:\n' +
-          '1. Unzip the file\n' +
-          '2. Run: npm install\n' +
-          '3. Run: npm run dev\n' +
-          '4. Open http://localhost:5173',
-          'system'
-        );
+
+        console.log('Vite app downloaded! To run locally: npm install && npm run dev');
       } else {
         throw new Error(data.error);
       }
     } catch (error: any) {
       log(`Failed to create zip: ${error.message}`, 'error');
-      addChatMessage(`Failed to create ZIP: ${error.message}`, 'system');
+      console.error(`Failed to create ZIP: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -2141,16 +1807,16 @@ Tip: I automatically detect and install npm packages from your code imports (lik
 
   const reapplyLastGeneration = async () => {
     if (!conversationContext.lastGeneratedCode) {
-      addChatMessage('No previous generation to re-apply', 'system');
+      console.log('No previous generation to re-apply');
       return;
     }
-    
+
     if (!sandboxData) {
-      addChatMessage('Please create a sandbox first', 'system');
+      console.error('Please create a sandbox first');
       return;
     }
-    
-    addChatMessage('Re-applying last generation...', 'system');
+
+    console.log('Re-applying last generation...');
     const isEdit = conversationContext.appliedCode.length > 0;
     await applyGeneratedCode(conversationContext.lastGeneratedCode, isEdit);
   };
@@ -2193,346 +1859,6 @@ Tip: I automatically detect and install npm packages from your code imports (lik
     }
   };
 
-//   const clearChatHistory = () => {
-//     setChatMessages([{
-//       content: 'Chat history cleared. How can I help you?',
-//       type: 'system',
-//       timestamp: new Date()
-//     }]);
-//   };
-// 
-
-//   const cloneWebsite = async () => {
-//     let url = urlInput.trim();
-//     if (!url) {
-//       setUrlStatus(prev => [...prev, 'Please enter a URL']);
-//       return;
-//     }
-//     
-//     if (!url.match(/^https?:\/\//i)) {
-//       url = 'https://' + url;
-//     }
-//     
-//     setUrlStatus([`Using: ${url}`, 'Starting to scrape...']);
-//     
-//     setUrlOverlayVisible(false);
-//     
-//     // Remove protocol for cleaner display
-//     const cleanUrl = url.replace(/^https?:\/\//i, '');
-//     addChatMessage(`Starting to clone ${cleanUrl}...`, 'system');
-//     
-//     // Capture screenshot immediately and switch to preview tab
-//     captureUrlScreenshot(url);
-//     
-//     try {
-//       addChatMessage('Scraping website content...', 'system');
-//       const scrapeResponse = await fetch('/api/scrape-url-enhanced', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({ url })
-//       });
-//       
-//       if (!scrapeResponse.ok) {
-//         throw new Error(`Scraping failed: ${scrapeResponse.status}`);
-//       }
-//       
-//       const scrapeData = await scrapeResponse.json();
-//       
-//       if (!scrapeData.success) {
-//         throw new Error(scrapeData.error || 'Failed to scrape website');
-//       }
-//       
-//       addChatMessage(`Scraped ${scrapeData.content.length} characters from ${url}`, 'system');
-//       
-//       // Clear preparing design state and switch to generation tab
-//       setIsPreparingDesign(false);
-//       setActiveTab('generation');
-//       
-//       setConversationContext(prev => ({
-//         ...prev,
-//         scrapedWebsites: [...prev.scrapedWebsites, {
-//           url,
-//           content: scrapeData,
-//           timestamp: new Date()
-//         }],
-//         currentProject: `Clone of ${url}`
-//       }));
-//       
-//       // Start sandbox creation in parallel with code generation
-//       let sandboxPromise: Promise<any> | null = null;
-//       if (!sandboxData) {
-//         addChatMessage('Creating sandbox while generating your React app...', 'system');
-//         sandboxPromise = createSandbox(true);
-//       }
-//       
-//       addChatMessage('Analyzing and generating React recreation...', 'system');
-//       
-//       const recreatePrompt = `I scraped this website and want you to recreate it as a modern React application.
-// 
-// URL: ${url}
-// 
-// SCRAPED CONTENT:
-// ${scrapeData.content}
-// 
-// ${homeContextInput ? `ADDITIONAL CONTEXT/REQUIREMENTS FROM USER:
-// ${homeContextInput}
-// 
-// Please incorporate these requirements into the design and implementation.` : ''}
-// 
-// REQUIREMENTS:
-// 1. Create a COMPLETE React application with App.jsx as the main component
-// 2. App.jsx MUST import and render all other components
-// 3. Recreate the main sections and layout from the scraped content
-// 4. ${homeContextInput ? `Apply the user's context/theme: "${homeContextInput}"` : `Use a modern dark theme with excellent contrast:
-//    - Background: #0a0a0a
-//    - Text: #ffffff
-//    - Links: #60a5fa
-//    - Accent: #3b82f6`}
-// 5. Make it fully responsive
-// 6. Include hover effects and smooth transitions
-// 7. Create separate components for major sections (Header, Hero, Features, etc.)
-// 8. Use semantic HTML5 elements
-// 
-// IMPORTANT CONSTRAINTS:
-// - DO NOT use React Router or any routing libraries
-// - Use regular <a> tags with href="#section" for navigation, NOT Link or NavLink components
-// - This is a single-page application, no routing needed
-// - ALWAYS create src/App.jsx that imports ALL components
-// - Each component should be in src/components/
-// - Use Tailwind CSS for ALL styling (no custom CSS files)
-// - Make sure the app actually renders visible content
-// - Create ALL components that you reference in imports
-// 
-// IMAGE HANDLING RULES:
-// - When the scraped content includes images, USE THE ORIGINAL IMAGE URLS whenever appropriate
-// - Keep existing images from the scraped site (logos, product images, hero images, icons, etc.)
-// - Use the actual image URLs provided in the scraped content, not placeholders
-// - Only use placeholder images or generic services when no real images are available
-// - For company logos and brand images, ALWAYS use the original URLs to maintain brand identity
-// - If scraped data contains image URLs, include them in your img tags
-// - Example: If you see "https://example.com/logo.png" in the scraped content, use that exact URL
-// 
-// Focus on the key sections and content, making it clean and modern while preserving visual assets.`;
-//       
-//       setGenerationProgress(prev => ({
-//         isGenerating: true,
-//         status: 'Initializing AI...',
-//         components: [],
-//         currentComponent: 0,
-//         streamedCode: '',
-//         isStreaming: true,
-//         isThinking: false,
-//         thinkingText: undefined,
-//         thinkingDuration: undefined,
-//         // Keep previous files until new ones are generated
-//         files: prev.files || [],
-//         currentFile: undefined,
-//         lastProcessedPosition: 0
-//       }));
-//       
-//       // Switch to generation tab when starting
-//       setActiveTab('generation');
-//       
-//       const aiResponse = await fetch('/api/generate-ai-code-stream', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({
-//           prompt: recreatePrompt,
-//           model: aiModel,
-//           context: {
-//             sandboxId: sandboxData?.id,
-//             structure: structureContent,
-//             conversationContext: conversationContext
-//           }
-//         })
-//       });
-//       
-//       if (!aiResponse.ok) {
-//         throw new Error(`AI generation failed: ${aiResponse.status}`);
-//       }
-//       
-//       const reader = aiResponse.body?.getReader();
-//       const decoder = new TextDecoder();
-//       let generatedCode = '';
-//       let explanation = '';
-//       
-//       if (reader) {
-//         while (true) {
-//           const { done, value } = await reader.read();
-//           if (done) break;
-//           
-//           const chunk = decoder.decode(value);
-//           const lines = chunk.split('\n');
-//           
-//           for (const line of lines) {
-//             if (line.startsWith('data: ')) {
-//               try {
-//                 const data = JSON.parse(line.slice(6));
-//                 
-//                 if (data.type === 'status') {
-//                   setGenerationProgress(prev => ({ ...prev, status: data.message }));
-//                 } else if (data.type === 'thinking') {
-//                   setGenerationProgress(prev => ({ 
-//                     ...prev, 
-//                     isThinking: true,
-//                     thinkingText: (prev.thinkingText || '') + data.text
-//                   }));
-//                 } else if (data.type === 'thinking_complete') {
-//                   setGenerationProgress(prev => ({ 
-//                     ...prev, 
-//                     isThinking: false,
-//                     thinkingDuration: data.duration
-//                   }));
-//                 } else if (data.type === 'conversation') {
-//                   // Add conversational text to chat only if it's not code
-//                   let text = data.text || '';
-//                   
-//                   // Remove package tags from the text
-//                   text = text.replace(/<package>[^<]*<\/package>/g, '');
-//                   text = text.replace(/<packages>[^<]*<\/packages>/g, '');
-//                   
-//                   // Filter out any XML tags and file content that slipped through
-//                   if (!text.includes('<file') && !text.includes('import React') && 
-//                       !text.includes('export default') && !text.includes('className=') &&
-//                       text.trim().length > 0) {
-//                     addChatMessage(text.trim(), 'ai');
-//                   }
-//                 } else if (data.type === 'stream' && data.raw) {
-//                   setGenerationProgress(prev => ({ 
-//                     ...prev, 
-//                     streamedCode: prev.streamedCode + data.text,
-//                     lastProcessedPosition: prev.lastProcessedPosition || 0
-//                   }));
-//                 } else if (data.type === 'component') {
-//                   setGenerationProgress(prev => ({
-//                     ...prev,
-//                     status: `Generated ${data.name}`,
-//                     components: [...prev.components, { 
-//                       name: data.name,
-//                       path: data.path,
-//                       completed: true
-//                     }],
-//                     currentComponent: prev.currentComponent + 1
-//                   }));
-//                 } else if (data.type === 'complete') {
-//                   generatedCode = data.generatedCode;
-//                   explanation = data.explanation;
-//                   
-//                   // Save the last generated code
-//                   setConversationContext(prev => ({
-//                     ...prev,
-//                     lastGeneratedCode: generatedCode
-//                   }));
-//                 }
-//               } catch (e) {
-//                 console.error('Error parsing streaming data:', e);
-//               }
-//             }
-//           }
-//         }
-//       }
-//       
-//       setGenerationProgress(prev => ({
-//         ...prev,
-//         isGenerating: false,
-//         isStreaming: false,
-//         status: 'Generation complete!',
-//         isEdit: prev.isEdit
-//       }));
-//       
-//       if (generatedCode) {
-//         addChatMessage('AI recreation generated!', 'system');
-//         
-//         // Add the explanation to chat if available
-//         if (explanation && explanation.trim()) {
-//           addChatMessage(explanation, 'ai');
-//         }
-//         
-//         setPromptInput(generatedCode);
-//         // Don't show the Generated Code panel by default
-//         // setLeftPanelVisible(true);
-//         
-//         // Wait for sandbox creation if it's still in progress
-//         let activeSandboxData = sandboxData;
-//         if (sandboxPromise) {
-//           addChatMessage('Waiting for sandbox to be ready...', 'system');
-//           try {
-//             const newSandboxData = await sandboxPromise;
-//             if (newSandboxData) {
-//               activeSandboxData = newSandboxData;
-//             }
-//             // Remove the waiting message
-//             setChatMessages(prev => prev.filter(msg => msg.content !== 'Waiting for sandbox to be ready...'));
-//           } catch (error: any) {
-//             addChatMessage('Sandbox creation failed. Cannot apply code.', 'system');
-//             throw error;
-//           }
-//         }
-//         
-//         // Only apply code if we have sandbox data
-//         if (activeSandboxData) {
-//           // First application for cloned site should not be in edit mode
-//           await applyGeneratedCode(generatedCode, false);
-//         }
-//         
-//         addChatMessage(
-//           `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}! The scraped content is now in my context, so you can ask me to modify specific sections or add features based on the original site.`, 
-//           'ai',
-//           {
-//             scrapedUrl: url,
-//             scrapedContent: scrapeData,
-//             generatedCode: generatedCode
-//           }
-//         );
-//         
-//         setUrlInput('');
-//         setUrlStatus([]);
-//         setHomeContextInput('');
-//         
-//         // Clear generation progress and all screenshot/design states
-//         setGenerationProgress(prev => ({
-//           ...prev,
-//           isGenerating: false,
-//           isStreaming: false,
-//           status: 'Generation complete!'
-//         }));
-//         
-//         // Clear screenshot and preparing design states to prevent them from showing on next run
-//         setUrlScreenshot(null);
-//         setIsPreparingDesign(false);
-//         setTargetUrl('');
-//         setScreenshotError(null);
-//         setLoadingStage(null); // Clear loading stage
-//         setShowLoadingBackground(false); // Clear loading background
-//         
-//         setTimeout(() => {
-//           // Switch back to preview tab but keep files
-//           setActiveTab('preview');
-//         }, 1000); // Show completion briefly then switch
-//       } else {
-//         throw new Error('Failed to generate recreation');
-//       }
-//       
-//     } catch (error: any) {
-//       addChatMessage(`Failed to clone website: ${error.message}`, 'system');
-//       setUrlStatus([]);
-//       setIsPreparingDesign(false);
-//       // Clear all states on error
-//       setUrlScreenshot(null);
-//       setTargetUrl('');
-//       setScreenshotError(null);
-//       setLoadingStage(null);
-//       setGenerationProgress(prev => ({
-//         ...prev,
-//         isGenerating: false,
-//         isStreaming: false,
-//         status: '',
-//         // Keep files to display in sidebar
-//         files: prev.files
-//       }));
-//       setActiveTab('preview');
-//     }
-//   };
 
   const captureUrlScreenshot = async (url: string) => {
     setIsCapturingScreenshot(true);
@@ -2589,14 +1915,13 @@ Tip: I automatically detect and install npm packages from your code imports (lik
     setShowLoadingBackground(true);
     
     // Clear messages and immediately show the cloning message
-    setChatMessages([]);
     let displayUrl = homeUrlInput.trim();
     if (!displayUrl.match(/^https?:\/\//i)) {
       displayUrl = 'https://' + displayUrl;
     }
     // Remove protocol for cleaner display
     const cleanUrl = displayUrl.replace(/^https?:\/\//i, '');
-    addChatMessage(`Starting to clone ${cleanUrl}...`, 'system');
+    console.log(`Starting to clone ${cleanUrl}...`);
     
     // Start creating sandbox and capturing screenshot immediately in parallel
     const sandboxPromise = !sandboxData ? createSandbox(true) : Promise.resolve(null);
@@ -2649,7 +1974,7 @@ Tip: I automatically detect and install npm packages from your code imports (lik
             source: 'search-result'
           };
           sessionStorage.removeItem('siteMarkdown'); // Clear after use
-          addChatMessage('Using cached content from search results...', 'system');
+          console.log('Using cached content from search results...');
         } else {
           // Perform fresh scraping
           const scrapeResponse = await fetch('/api/scrape-url-enhanced', {
@@ -2825,10 +2150,10 @@ Focus on the key sections and content, making it clean and modern.`;
                   text = text.replace(/<packages>[^<]*<\/packages>/g, '');
                   
                   // Filter out any XML tags and file content that slipped through
-                  if (!text.includes('<file') && !text.includes('import React') && 
+                  if (!text.includes('<file') && !text.includes('import React') &&
                       !text.includes('export default') && !text.includes('className=') &&
                       text.trim().length > 0) {
-                    addChatMessage(text.trim(), 'ai');
+                    console.log('[AI]', text.trim());
                   }
                 } else if (data.type === 'stream' && data.raw) {
                   setGenerationProgress(prev => {
@@ -2950,26 +2275,20 @@ Focus on the key sections and content, making it clean and modern.`;
         }));
         
         if (generatedCode) {
-          addChatMessage('AI recreation generated!', 'system');
-          
-          // Add the explanation to chat if available
+          console.log('AI recreation generated!');
+
+          // Log the explanation if available
           if (explanation && explanation.trim()) {
-            addChatMessage(explanation, 'ai');
+            console.log('[AI explanation]', explanation);
           }
-          
+
           setPromptInput(generatedCode);
-          
+
           // First application for cloned site should not be in edit mode
           await applyGeneratedCode(generatedCode, false);
-          
-          addChatMessage(
-            `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}! The scraped content is now in my context, so you can ask me to modify specific sections or add features based on the original site.`, 
-            'ai',
-            {
-              scrapedUrl: url,
-              scrapedContent: scrapeData,
-              generatedCode: generatedCode
-            }
+
+          console.log(
+            `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}!`
           );
           
           setConversationContext(prev => ({
@@ -3011,7 +2330,7 @@ Focus on the key sections and content, making it clean and modern.`;
           setActiveTab('preview');
         }, 1000); // Show completion briefly then switch
       } catch (error: any) {
-        addChatMessage(`Failed to clone website: ${error.message}`, 'system');
+        console.error(`Failed to clone website: ${error.message}`);
         setUrlStatus([]);
         setIsPreparingDesign(false);
         setIsStartingNewGeneration(false); // Clear new generation flag on error
