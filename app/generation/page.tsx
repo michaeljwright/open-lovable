@@ -1176,6 +1176,32 @@ function AISandboxPage() {
       console.log('[handleSwitchToCodeView] No files loaded, fetching sandbox files...');
       await fetchSandboxFiles();
     }
+
+    // Auto-select a default file if none is selected
+    // Wait a bit for files to load, then select a default
+    setTimeout(() => {
+      if (!selectedFile && generationProgress.files.length > 0) {
+        // Try to find and select src/App.jsx, App.jsx, or src/main.jsx
+        const defaultFile = generationProgress.files.find(f =>
+          f.path === 'src/App.jsx' ||
+          f.path === 'App.jsx' ||
+          f.path === 'src/main.jsx' ||
+          f.path === 'src/index.jsx'
+        );
+
+        if (defaultFile) {
+          setSelectedFile(defaultFile.path);
+        } else {
+          // If no standard file found, select the first .jsx or .js file
+          const firstJsxFile = generationProgress.files.find(f =>
+            f.path.endsWith('.jsx') || f.path.endsWith('.js')
+          );
+          if (firstJsxFile) {
+            setSelectedFile(firstJsxFile.path);
+          }
+        }
+      }
+    }, 500);
   };
   
 //   const restartViteServer = async () => {
@@ -1515,47 +1541,26 @@ function AISandboxPage() {
                         </div>
                       </div>
                     )}
-                    
-                    {/* Show completed files */}
-                    {generationProgress.files.map((file, idx) => (
-                      <div key={idx} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="px-4 py-2 bg-[#36322F] text-white flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-green-500">✓</span>
-                            <span className="font-mono text-sm">{file.path}</span>
-                          </div>
-                          <span className={`px-2 py-0.5 text-xs rounded ${
-                            file.type === 'css' ? 'bg-blue-600 text-white' :
-                            file.type === 'javascript' ? 'bg-yellow-600 text-white' :
-                            file.type === 'json' ? 'bg-green-600 text-white' :
-                            'bg-gray-200 text-gray-700'
-                          }`}>
-                            {file.type === 'javascript' ? 'JSX' : file.type.toUpperCase()}
-                          </span>
-                        </div>
-                        <div className="bg-gray-900 border border-gray-700  max-h-48 overflow-y-auto scrollbar-hide">
-                          <SyntaxHighlighter
-                            language={
-                              file.type === 'css' ? 'css' :
-                              file.type === 'json' ? 'json' :
-                              file.type === 'html' ? 'html' :
-                              'jsx'
-                            }
-                            style={vscDarkPlus}
-                            customStyle={{
-                              margin: 0,
-                              padding: '1rem',
-                              fontSize: '0.75rem',
-                              background: 'transparent',
-                            }}
-                            showLineNumbers={true}
-                            wrapLongLines={true}
-                          >
-                            {file.content}
-                          </SyntaxHighlighter>
+
+                    {/* Show message when no file is selected */}
+                    {!generationProgress.currentFile && generationProgress.files.length > 0 && (
+                      <div className="flex items-center justify-center h-full min-h-[400px]">
+                        <div className="text-center max-w-md">
+                          <svg className="w-20 h-20 mx-auto mb-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">
+                            Select a file to view
+                          </h3>
+                          <p className="text-gray-500 text-sm">
+                            Click on any file from the explorer on the left to view its contents
+                          </p>
+                          <p className="text-gray-400 text-xs mt-2">
+                            {generationProgress.files.length} files available
+                          </p>
                         </div>
                       </div>
-                    ))}
+                    )}
                     
                     {/* Show remaining raw stream if there's content after the last file */}
                     {!generationProgress.currentFile && generationProgress.streamedCode.length > 0 && (
