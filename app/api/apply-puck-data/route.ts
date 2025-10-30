@@ -65,8 +65,6 @@ export async function POST(request: NextRequest) {
     const appContent = generatePuckRenderApp(puckData, puckConfig);
 
     console.log('[apply-puck-data] Generated App.jsx length:', appContent.length);
-    console.log('[apply-puck-data] App.jsx preview (first 500 chars):');
-    console.log(appContent.substring(0, 500));
 
     await provider.writeFile('src/App.jsx', appContent);
     console.log('[apply-puck-data] Written src/App.jsx with Puck preview renderer');
