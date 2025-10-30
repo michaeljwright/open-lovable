@@ -303,6 +303,11 @@ function AISandboxPage() {
                 console.log('[generation]', message);
               }
 
+              // Fetch sandbox files to populate the Code view
+              console.log('[generation] Fetching sandbox files after applying Puck data...');
+              await fetchSandboxFiles();
+              console.log('[generation] Finished fetching sandbox files');
+
               // Refresh the iframe to show the updated content
               // Give the sandbox more time to install packages and compile
               setTimeout(() => {
@@ -1085,8 +1090,13 @@ function AISandboxPage() {
   };
 
   const fetchSandboxFiles = async () => {
-    if (!sandboxData) return;
-    
+    if (!sandboxData) {
+      console.warn('[fetchSandboxFiles] No sandboxData available, skipping file fetch');
+      return;
+    }
+
+    console.log('[fetchSandboxFiles] Fetching files for sandbox:', sandboxData.sandboxId);
+
     try {
       const response = await fetch('/api/get-sandbox-files', {
         method: 'GET',
@@ -1094,17 +1104,77 @@ function AISandboxPage() {
           'Content-Type': 'application/json',
         }
       });
-      
+
+      console.log('[fetchSandboxFiles] Response status:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('[fetchSandboxFiles] Response data:', { success: data.success, fileCount: Object.keys(data.files || {}).length });
+
         if (data.success) {
           setSandboxFiles(data.files || {});
           setFileStructure(data.structure || '');
           console.log('[fetchSandboxFiles] Updated file list:', Object.keys(data.files || {}).length, 'files');
+
+          // Also populate generationProgress.files for the Code view
+          const filesObject = data.files || {};
+          const filesArray = Object.keys(filesObject).map(path => {
+            const content = filesObject[path];
+            const ext = path.split('.').pop()?.toLowerCase() || '';
+            const type = ext === 'jsx' || ext === 'js' ? 'javascript' :
+                        ext === 'css' ? 'css' :
+                        ext === 'json' ? 'json' :
+                        ext === 'html' ? 'html' : 'text';
+
+            return {
+              path,
+              content,
+              type,
+              completed: true,
+              edited: false
+            };
+          });
+
+          console.log('[fetchSandboxFiles] About to set generationProgress.files with', filesArray.length, 'files');
+          console.log('[fetchSandboxFiles] File paths:', filesArray.map(f => f.path));
+
+          setGenerationProgress(prev => {
+            console.log('[fetchSandboxFiles] Current generationProgress.files length:', prev.files.length);
+            return {
+              ...prev,
+              files: filesArray
+            };
+          });
+
+          console.log('[fetchSandboxFiles] Successfully populated generationProgress.files');
+        } else {
+          console.warn('[fetchSandboxFiles] API returned success:false, error:', data.error);
         }
+      } else {
+        // Try to get error details from response body
+        let errorDetails = '';
+        try {
+          const errorData = await response.json();
+          errorDetails = errorData.error || JSON.stringify(errorData);
+        } catch (e) {
+          errorDetails = 'Could not parse error response';
+        }
+        console.error('[fetchSandboxFiles] API request failed with status:', response.status, 'Error:', errorDetails);
       }
     } catch (error) {
       console.error('[fetchSandboxFiles] Error fetching files:', error);
+    }
+  };
+
+  // Handler for switching to Code view
+  const handleSwitchToCodeView = async () => {
+    console.log('[handleSwitchToCodeView] Switching to Code view');
+    setActiveTab('generation');
+
+    // If no files are loaded yet but we have a sandbox, fetch them
+    if (generationProgress.files.length === 0 && sandboxData) {
+      console.log('[handleSwitchToCodeView] No files loaded, fetching sandbox files...');
+      await fetchSandboxFiles();
     }
   };
   
@@ -1160,6 +1230,8 @@ function AISandboxPage() {
 //   };
 
   const renderMainContent = () => {
+    console.log('[renderMainContent] generationProgress.files length:', generationProgress.files.length);
+    console.log('[renderMainContent] generationProgress.isGenerating:', generationProgress.isGenerating);
     if (activeTab === 'generation' && (generationProgress.isGenerating || generationProgress.files.length > 0)) {
       return (
         /* Generation Tab Content */
@@ -1590,15 +1662,17 @@ function AISandboxPage() {
                   
                   {/* Status text */}
                   <p className="text-white text-lg font-medium">
-                    {isCapturingScreenshot ? 'Analyzing website...' :
+                    {loading && !sandboxData && !isCapturingScreenshot && !isPreparingDesign && !generationProgress.isGenerating ? status.text :
+                     isCapturingScreenshot ? 'Analyzing website...' :
                      isPreparingDesign ? 'Preparing design...' :
                      generationProgress.isGenerating ? 'Generating code...' :
                      'Loading...'}
                   </p>
-                  
+
                   {/* Subtle progress hint */}
                   <p className="text-white/60 text-sm mt-2">
-                    {isCapturingScreenshot ? 'Taking a screenshot of the site' :
+                    {loading && !sandboxData && !isCapturingScreenshot && !isPreparingDesign && !generationProgress.isGenerating ? 'Setting up your development environment' :
+                     isCapturingScreenshot ? 'Taking a screenshot of the site' :
                      isPreparingDesign ? 'Understanding the layout and structure' :
                      generationProgress.isGenerating ? 'Writing React components' :
                      'Please wait...'}
@@ -1752,10 +1826,9 @@ function AISandboxPage() {
                 d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
               />
             </svg>
-            <h3 className="text-lg font-medium text-gray-700 mb-2">No code generated yet</h3>
+            <h3 className="text-lg font-medium text-gray-700 mb-2">No code has been generated</h3>
             <p className="text-sm text-gray-500">
-              Start a new generation or chat with the AI to create your site.
-              The code will appear here as it's being generated.
+              Either the sandbox is not ready yet or something went wrong.
             </p>
           </div>
         </div>
@@ -2287,10 +2360,20 @@ Focus on the key sections and content, making it clean and modern.`;
           // First application for cloned site should not be in edit mode
           await applyGeneratedCode(generatedCode, false);
 
+          // Fetch sandbox files to populate the Code view
+          console.log('[startGeneration] About to fetch sandbox files...');
+          await fetchSandboxFiles();
+          console.log('[startGeneration] Finished fetching sandbox files');
+
+          // Check if files were populated
+          setTimeout(() => {
+            console.log('[startGeneration] Checking generationProgress.files after fetch...');
+          }, 100);
+
           console.log(
             `Successfully recreated ${url} as a modern React app${homeContextInput ? ` with your requested context: "${homeContextInput}"` : ''}!`
           );
-          
+
           setConversationContext(prev => ({
             ...prev,
             generatedComponents: [],
@@ -2359,10 +2442,10 @@ Focus on the key sections and content, making it clean and modern.`;
               {/* Toggle-style Code/View switcher */}
               <div className="inline-flex bg-gray-100 border border-gray-200 rounded-md p-0.5">
                 <button
-                  onClick={() => setActiveTab('generation')}
+                  onClick={handleSwitchToCodeView}
                   className={`px-3 py-1 rounded transition-all text-xs font-medium ${
-                    activeTab === 'generation' 
-                      ? 'bg-white text-gray-900 shadow-sm' 
+                    activeTab === 'generation'
+                      ? 'bg-white text-gray-900 shadow-sm'
                       : 'bg-transparent text-gray-600 hover:text-gray-900'
                   }`}
                 >

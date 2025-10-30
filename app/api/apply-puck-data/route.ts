@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     console.log('[apply-puck-data] sandboxId:', sandboxId);
 
     // Debug: Log the config structure to identify issues
-    console.log('[apply-puck-data] Config preview:', typeof puckConfig === 'string' ? puckConfig.substring(0, 500) : JSON.stringify(puckConfig).substring(0, 500));
+    // console.log('[apply-puck-data] Config preview:', typeof puckConfig === 'string' ? puckConfig.substring(0, 500) : JSON.stringify(puckConfig).substring(0, 500));
 
     // Parse the config to validate structure
     if (typeof puckConfig === 'string') {
@@ -108,8 +108,8 @@ function generatePuckRenderApp(puckData: any, puckConfigJs: string): string {
   const cleanedConfig = puckConfigJs.replace(/^export\s+(const|let|var)\s+config\s*=\s*/, '');
 
   // Log the cleaned config for debugging
-  console.log('[apply-puck-data] Cleaned config preview (first 1000 chars):');
-  console.log(cleanedConfig.substring(0, 1000));
+  // console.log('[apply-puck-data] Cleaned config preview (first 1000 chars):');
+  // console.log(cleanedConfig.substring(0, 1000));
 
   // Instead of running Puck editor in sandbox, just render the preview
   // Using a simple approach that doesn't rely on Puck at all

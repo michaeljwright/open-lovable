@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const configJs = serializeConfig(generated.config);
 
     console.log('[create-site] Config serialized, length:', configJs.length);
-    console.log('[create-site] Config preview:', configJs.substring(0, 300) + '...');
+    // console.log('[create-site] Config preview:', configJs.substring(0, 300) + '...');
 
     console.log('[create-site] ════════════════════════════════════════');
     console.log('[create-site] ✓ Successfully generated site');
