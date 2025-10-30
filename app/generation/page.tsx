@@ -587,7 +587,7 @@ function AISandboxPage() {
     });
 
     try {
-      const response = await fetch('/api/create-ai-sandbox-v2', {
+      const response = await fetch('/api/create-ai-sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
