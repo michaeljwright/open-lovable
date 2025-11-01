@@ -7,10 +7,10 @@ export default function HomeHeroBadge() {
       href="#"
       onClick={(e) => e.preventDefault()}
     >
-      <div className="px-8 text-label-x-small">Website Builder</div>
+      <div id="website-builder-badge" className="px-8 text-label-x-small">Website Builder</div>
 
       <div className="p-1">
-        <div className="size-18 bg-accent-black flex-center rounded-full group-hover:bg-heat-100 transition-all group-hover:w-30">
+        <div className="size-18 bg-heat-100 flex-center rounded-full group-hover:bg-accent-black transition-all w-30 group-hover:w-18">
           <svg
             fill="none"
             height="8"
@@ -19,7 +19,7 @@ export default function HomeHeroBadge() {
             xmlns="http://www.w3.org/2000/svg"
           >
             <path
-              className="transition-all -translate-x-2 group-hover:translate-x-0"
+              className="transition-all translate-x-0 group-hover:-translate-x-2"
               d="M6 1L9 4L6 7"
               stroke="white"
               strokeLinecap="round"
@@ -28,7 +28,7 @@ export default function HomeHeroBadge() {
             />
 
             <path
-              className="transition-all -translate-x-3 group-hover:translate-x-0 scale-x-[0] group-hover:scale-x-[1] origin-right"
+              className="transition-all translate-x-0 group-hover:-translate-x-3 scale-x-[1] group-hover:scale-x-[0] origin-right"
               d="M1 4L9 4"
               stroke="white"
               strokeLinecap="round"
