@@ -164,14 +164,19 @@ FIELD TYPES:
 - "select" - Dropdown (requires "options" array)
 - "array" - Array of objects (requires "arrayFields" object)
 
-Example with array:
+Example with array (CRITICAL - must include getItemSummary and defaultItemProps for editability):
 "features": {
   "type": "array",
   "label": "Features",
   "arrayFields": {
     "title": { "type": "text", "label": "Title" },
     "description": { "type": "textarea", "label": "Description" }
-  }
+  },
+  "defaultItemProps": {
+    "title": "New Feature",
+    "description": "Description"
+  },
+  "getItemSummary": "(item, i) => item.title || `Feature ${i + 1}`"
 }
 
 COMMON EDITING SCENARIOS:
@@ -199,6 +204,20 @@ COMMON EDITING SCENARIOS:
 5. "Add a contact form after the hero"
    → Insert ContactForm into data.content at index 1
    → Add ContactForm to config.components if needed
+
+CRITICAL: Grid Layout & Item Count Rules:
+When creating or modifying grid layouts, the number of items MUST match the grid columns:
+- **2-column grid** → Use 2, 4, 6, or 8 items
+- **3-column grid** → Use 3, 6, or 9 items
+- **4-column grid** → Use 4, 8, or 12 items
+
+Examples:
+- Features with 3-column grid → 3 or 6 items (NOT 4 or 5)
+- Testimonials with 2-column grid → 2 or 4 items (NOT 3)
+- Team with 4-column grid → 4 or 8 items (NOT 5 or 6)
+- Pricing usually has 3 tiers → Use 3-column grid
+
+NEVER create mismatched layouts!
 
 STYLING GUIDELINES:
 - Use modern, professional designs
@@ -283,7 +302,28 @@ const UPDATE_PUCK_SCHEMA = {
             type: "object",
             properties: {
               label: { type: "string" },
-              fields: { type: "object" },
+              fields: {
+                type: "object",
+                additionalProperties: {
+                  type: "object",
+                  properties: {
+                    type: { type: "string" },
+                    label: { type: "string" },
+                    arrayFields: {
+                      type: "object",
+                      additionalProperties: {
+                        type: "object",
+                        properties: {
+                          type: { type: "string" },
+                          label: { type: "string" }
+                        }
+                      }
+                    },
+                    options: { type: "array" }
+                  },
+                  required: ["type", "label"]
+                }
+              },
               render: { type: "string" }
             },
             required: ["label", "fields", "render"]
@@ -322,7 +362,7 @@ async function updateSiteWithAI(prompt: string, currentData: any, currentConfig:
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 8000,
+    max_tokens: 20000,
     temperature: 0.7,
     system: [
       {
@@ -388,6 +428,106 @@ async function updateSiteWithAI(prompt: string, currentData: any, currentConfig:
     throw new Error('Invalid response structure from AI');
   }
 
+  // Validate and fix field definitions to ensure they all have type and label
+  console.log('[AI Updater] Validating field definitions...');
+  for (const [componentName, componentDef] of Object.entries(generated.config.components)) {
+    const component = componentDef as any;
+
+    // Ensure component has required properties
+    if (!component.label) {
+      console.warn(`[AI Updater] Component ${componentName} missing label, adding default`);
+      component.label = componentName;
+    }
+    if (!component.fields) {
+      console.warn(`[AI Updater] Component ${componentName} missing fields, adding empty object`);
+      component.fields = {};
+    }
+    if (!component.render) {
+      console.warn(`[AI Updater] Component ${componentName} missing render function, adding default`);
+      component.render = `() => React.createElement('div', {}, '${componentName}')`;
+    }
+
+    // Validate each field has type and label, and clean up unexpected properties
+    for (const [fieldName, fieldDef] of Object.entries(component.fields)) {
+      const field = fieldDef as any;
+
+      // Ensure required properties exist
+      if (!field.type) {
+        console.warn(`[AI Updater] Field ${componentName}.${fieldName} missing type, defaulting to 'text'`);
+        field.type = 'text';
+      }
+      if (!field.label) {
+        console.warn(`[AI Updater] Field ${componentName}.${fieldName} missing label, adding default`);
+        field.label = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
+      }
+
+      // CRITICAL: Puck only accepts specific properties on field definitions
+      // Keep only allowed properties: type, label, options (for select/radio), arrayFields, defaultItemProps, getItemSummary (for arrays)
+      const allowedProps = ['type', 'label', 'options', 'arrayFields', 'defaultItemProps', 'getItemSummary', 'min', 'max'];
+      const extraProps = Object.keys(field).filter(key => !allowedProps.includes(key));
+      if (extraProps.length > 0) {
+        console.warn(`[AI Updater] Field ${componentName}.${fieldName} has unexpected properties: ${extraProps.join(', ')}. Removing them.`);
+        extraProps.forEach(prop => delete field[prop]);
+      }
+
+      // Validate options if present
+      if (field.options && !Array.isArray(field.options)) {
+        console.warn(`[AI Updater] Field ${componentName}.${fieldName} has invalid options (not an array), removing`);
+        delete field.options;
+      }
+
+      // Validate arrayFields if present (for array type fields)
+      if (field.type === 'array') {
+        // Ensure array fields have required properties for editability
+        if (!field.arrayFields || typeof field.arrayFields !== 'object') {
+          console.warn(`[AI Updater] Array field ${componentName}.${fieldName} missing or invalid arrayFields, adding default`);
+          field.arrayFields = { value: { type: 'text', label: 'Value' } };
+        }
+
+        // Add getItemSummary if missing (critical for Puck editability)
+        if (!field.getItemSummary) {
+          console.warn(`[AI Updater] Array field ${componentName}.${fieldName} missing getItemSummary, adding default`);
+          field.getItemSummary = `(item, i) => item.title || item.name || \`Item \${i + 1}\``;
+        }
+
+        // Add defaultItemProps if missing
+        if (!field.defaultItemProps) {
+          console.warn(`[AI Updater] Array field ${componentName}.${fieldName} missing defaultItemProps, adding default`);
+          const defaultProps: any = {};
+          for (const [arrayFieldName, arrayFieldDef] of Object.entries(field.arrayFields)) {
+            const arrayField = arrayFieldDef as any;
+            if (arrayField.type === 'text' || arrayField.type === 'textarea') {
+              defaultProps[arrayFieldName] = 'New item';
+            } else if (arrayField.type === 'number') {
+              defaultProps[arrayFieldName] = 0;
+            }
+          }
+          field.defaultItemProps = defaultProps;
+        }
+
+        // Validate each arrayField has type and label
+        for (const [arrayFieldName, arrayFieldDef] of Object.entries(field.arrayFields)) {
+          const arrayField = arrayFieldDef as any;
+          if (!arrayField.type) {
+            console.warn(`[AI Updater] ArrayField ${componentName}.${fieldName}.${arrayFieldName} missing type, defaulting to 'text'`);
+            arrayField.type = 'text';
+          }
+          if (!arrayField.label) {
+            console.warn(`[AI Updater] ArrayField ${componentName}.${fieldName}.${arrayFieldName} missing label, adding default`);
+            arrayField.label = arrayFieldName.charAt(0).toUpperCase() + arrayFieldName.slice(1);
+          }
+          // Remove extra properties from arrayFields
+          const arrayFieldAllowedProps = ['type', 'label', 'options'];
+          const arrayFieldExtraProps = Object.keys(arrayField).filter(key => !arrayFieldAllowedProps.includes(key));
+          if (arrayFieldExtraProps.length > 0) {
+            console.warn(`[AI Updater] ArrayField ${componentName}.${fieldName}.${arrayFieldName} has unexpected properties: ${arrayFieldExtraProps.join(', ')}. Removing them.`);
+            arrayFieldExtraProps.forEach(prop => delete arrayField[prop]);
+          }
+        }
+      }
+    }
+  }
+
   console.log('[AI Updater] ✓ Successfully parsed and validated response');
   console.log('[AI Updater] Updated data:');
   console.log('  - Content items:', generated.data.content?.length || 0);
@@ -429,10 +569,10 @@ function serializeObject(obj: any, depth: number): string {
 
   if (typeof obj === 'object') {
     const entries = Object.entries(obj).map(([key, value]) => {
-      // Special handling for 'render' key - it should be a function string
+      // Special handling for function keys - they should be unquoted function strings
       let serializedValue;
-      if (key === 'render' && typeof value === 'string') {
-        // If render is a string (function code from AI), don't quote it
+      if ((key === 'render' || key === 'getItemSummary') && typeof value === 'string') {
+        // If render or getItemSummary is a string (function code from AI), don't quote it
         serializedValue = value;
       } else {
         serializedValue = serializeObject(value, depth + 1);

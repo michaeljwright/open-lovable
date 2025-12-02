@@ -225,13 +225,13 @@ export async function generateSiteWithAI(prompt: string): Promise<GeneratedSite>
 
   console.log('[AI Generator] Sending request to Claude with structured output...');
   console.log('[AI Generator] Model: claude-sonnet-4-20250514');
-  console.log('[AI Generator] Max tokens: 8000, Temperature: 0.7');
+  console.log('[AI Generator] Max tokens: 20000, Temperature: 0.7');
 
   const startTime = Date.now();
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 8000,
+    max_tokens: 20000,
     temperature: 0.7,
     system: [
       {

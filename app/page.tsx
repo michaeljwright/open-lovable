@@ -173,7 +173,9 @@ export default function HomePage() {
             <HomeHeroBackground />
 
             <div className="relative container px-16">
-              {!showAnimation && <HomeHeroBadge />}
+              <div style={{ visibility: showAnimation ? 'hidden' : 'visible' }}>
+                <HomeHeroBadge />
+              </div>
               <div className="flex justify-center">
                 <p
                   className="text-center text-body-large inline-block px-24 py-12 rounded-16"
