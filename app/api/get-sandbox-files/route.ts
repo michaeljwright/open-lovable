@@ -5,11 +5,25 @@ import { FileManifest, FileInfo, RouteInfo } from '@/types/file-manifest';
 
 declare global {
   var activeSandbox: any;
+  var activeSandboxProvider: any;
 }
 
 export async function GET() {
   try {
-    if (!global.activeSandbox) {
+    console.log('[get-sandbox-files] ========== GET REQUEST RECEIVED ==========');
+    // Check both V2 provider (new) and V1 sandbox (legacy) patterns
+    const provider = global.activeSandboxProvider;
+    const sandbox = global.activeSandbox;
+
+    console.log('[get-sandbox-files] Global state:', {
+      hasProvider: !!provider,
+      hasSandbox: !!sandbox,
+      providerType: provider?.constructor?.name,
+      sandboxType: sandbox?.constructor?.name
+    });
+
+    if (!provider && !sandbox) {
+      console.error('[get-sandbox-files] No active sandbox found!');
       return NextResponse.json({
         success: false,
         error: 'No active sandbox'
@@ -17,82 +31,295 @@ export async function GET() {
     }
 
     console.log('[get-sandbox-files] Fetching and analyzing file structure...');
-    
-    // Get list of all relevant files
-    const findResult = await global.activeSandbox.runCommand({
-      cmd: 'find',
-      args: [
-        '.',
-        '-name', 'node_modules', '-prune', '-o',
-        '-name', '.git', '-prune', '-o',
-        '-name', 'dist', '-prune', '-o',
-        '-name', 'build', '-prune', '-o',
-        '-type', 'f',
-        '(',
-        '-name', '*.jsx',
-        '-o', '-name', '*.js',
-        '-o', '-name', '*.tsx',
-        '-o', '-name', '*.ts',
-        '-o', '-name', '*.css',
-        '-o', '-name', '*.json',
-        ')',
-        '-print'
-      ]
-    });
-    
-    if (findResult.exitCode !== 0) {
-      throw new Error('Failed to list files');
+
+    // Detect provider type
+    const isE2B = provider && provider.constructor.name === 'E2BProvider';
+    const isVercel = provider && provider.constructor.name === 'VercelProvider';
+    const isV1Sandbox = !provider && sandbox;
+
+    console.log('[get-sandbox-files] Provider type:', { isE2B, isVercel, isV1Sandbox });
+
+    // Determine the working directory
+    const cwd = isVercel ? '/vercel/sandbox' : isE2B ? '/home/user/app' : '.';
+    const activeSandboxInstance = provider?.sandbox || sandbox;
+
+    if (!activeSandboxInstance) {
+      return NextResponse.json({
+        success: false,
+        error: 'No sandbox instance available'
+      }, { status: 404 });
     }
-    
-    const fileList = (await findResult.stdout()).split('\n').filter((f: string) => f.trim());
-    console.log('[get-sandbox-files] Found', fileList.length, 'files');
-    
-    // Read content of each file (limit to reasonable sizes)
+
+    // Read content of files
     const filesContent: Record<string, string> = {};
-    
-    for (const filePath of fileList) {
+    let structure = '';
+
+    if (isE2B) {
+      // E2B Provider - use Python code execution
+      console.log('[get-sandbox-files] Using E2B Python-based file reading');
+
       try {
-        // Check file size first
-        const statResult = await global.activeSandbox.runCommand({
-          cmd: 'stat',
-          args: ['-f', '%z', filePath]
-        });
-        
-        if (statResult.exitCode === 0) {
-          const fileSize = parseInt(await statResult.stdout());
-          
-          // Only read files smaller than 10KB
-          if (fileSize < 10000) {
-            const catResult = await global.activeSandbox.runCommand({
-              cmd: 'cat',
-              args: [filePath]
-            });
-            
-            if (catResult.exitCode === 0) {
-              const content = await catResult.stdout();
-              // Remove leading './' from path
-              const relativePath = filePath.replace(/^\.\//, '');
-              filesContent[relativePath] = content;
-            }
+        const pythonCode = `
+import os
+import json
+from pathlib import Path
+
+os.chdir('/home/user/app')
+
+# Extensions to include
+extensions = ['.jsx', '.js', '.tsx', '.ts', '.css', '.json']
+
+# Directories to exclude
+exclude_dirs = ['node_modules', '.git', 'dist', 'build', '.next', '__pycache__']
+
+files_data = {}
+
+def should_exclude(path):
+    parts = Path(path).parts
+    return any(excluded in parts for excluded in exclude_dirs)
+
+# Walk through directory
+for root, dirs, files in os.walk('.'):
+    # Filter out excluded directories
+    dirs[:] = [d for d in dirs if d not in exclude_dirs]
+
+    for file in files:
+        file_path = os.path.join(root, file)
+
+        # Check if file has one of the desired extensions
+        if any(file.endswith(ext) for ext in extensions):
+            if not should_exclude(file_path):
+                try:
+                    # Check file size (limit to 100KB)
+                    file_size = os.path.getsize(file_path)
+                    if file_size < 100000:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                            # Remove leading './' from path
+                            rel_path = file_path[2:] if file_path.startswith('./') else file_path
+                            files_data[rel_path] = content
+                except Exception as e:
+                    # Skip files that can't be read
+                    pass
+
+# Get directory structure
+dirs_list = []
+for root, dirs, files in os.walk('.'):
+    dirs[:] = [d for d in dirs if d not in exclude_dirs]
+    level = root.replace('.', '').count(os.sep)
+    if level < 5:  # Limit depth
+        dirs_list.append(root)
+
+print("FILES_DATA_START")
+print(json.dumps(files_data))
+print("FILES_DATA_END")
+print("DIRS_START")
+print('\\n'.join(dirs_list[:50]))
+print("DIRS_END")
+`;
+
+        const result = await activeSandboxInstance.runCode(pythonCode);
+        const output = result.logs.stdout.join('\n');
+
+        // Parse files data
+        const filesMatch = output.match(/FILES_DATA_START\n([\s\S]*?)\nFILES_DATA_END/);
+        if (filesMatch) {
+          const filesJson = filesMatch[1];
+          try {
+            const parsedFiles = JSON.parse(filesJson);
+            Object.assign(filesContent, parsedFiles);
+            console.log('[get-sandbox-files] Loaded', Object.keys(filesContent).length, 'files from E2B');
+          } catch (e) {
+            console.error('[get-sandbox-files] Failed to parse files JSON:', e);
           }
         }
-      } catch (parseError) {
-        console.debug('Error parsing component info:', parseError);
-        // Skip files that can't be read
-        continue;
+
+        // Parse directory structure
+        const dirsMatch = output.match(/DIRS_START\n([\s\S]*?)\nDIRS_END/);
+        if (dirsMatch) {
+          structure = dirsMatch[1];
+        }
+
+      } catch (error) {
+        console.error('[get-sandbox-files] E2B Python execution error:', error);
+        throw error;
       }
-    }
-    
-    // Get directory structure
-    const treeResult = await global.activeSandbox.runCommand({
-      cmd: 'find',
-      args: ['.', '-type', 'd', '-not', '-path', '*/node_modules*', '-not', '-path', '*/.git*']
-    });
-    
-    let structure = '';
-    if (treeResult.exitCode === 0) {
-      const dirs = (await treeResult.stdout()).split('\n').filter((d: string) => d.trim());
-      structure = dirs.slice(0, 50).join('\n'); // Limit to 50 lines
+
+    } else if (isVercel) {
+      // Vercel Provider - use runCommand
+      console.log('[get-sandbox-files] Using Vercel command-based file reading');
+
+      const findResult = await activeSandboxInstance.runCommand({
+        cmd: 'find',
+        args: [
+          '.',
+          '-name', 'node_modules', '-prune', '-o',
+          '-name', '.git', '-prune', '-o',
+          '-name', 'dist', '-prune', '-o',
+          '-name', 'build', '-prune', '-o',
+          '-name', '.next', '-prune', '-o',
+          '-type', 'f',
+          '(',
+          '-name', '*.jsx',
+          '-o', '-name', '*.js',
+          '-o', '-name', '*.tsx',
+          '-o', '-name', '*.ts',
+          '-o', '-name', '*.css',
+          '-o', '-name', '*.json',
+          ')',
+          '-print'
+        ],
+        cwd
+      });
+
+      if (findResult.exitCode !== 0) {
+        throw new Error('Failed to list files');
+      }
+
+      let stdoutContent = '';
+      if (typeof findResult.stdout === 'function') {
+        stdoutContent = await findResult.stdout();
+      } else {
+        stdoutContent = findResult.stdout || '';
+      }
+
+      const fileList = stdoutContent.split('\n').filter((f: string) => f.trim());
+      console.log('[get-sandbox-files] Found', fileList.length, 'files');
+
+      for (const filePath of fileList) {
+        try {
+          const statResult = await activeSandboxInstance.runCommand({
+            cmd: 'bash',
+            args: ['-c', `wc -c < "${filePath}"`],
+            cwd
+          });
+
+          if (statResult.exitCode === 0) {
+            let sizeOutput = '';
+            if (typeof statResult.stdout === 'function') {
+              sizeOutput = await statResult.stdout();
+            } else {
+              sizeOutput = statResult.stdout || '0';
+            }
+
+            const fileSize = parseInt(sizeOutput.trim());
+
+            if (fileSize < 100000) {
+              const catResult = await activeSandboxInstance.runCommand({
+                cmd: 'cat',
+                args: [filePath],
+                cwd
+              });
+
+              if (catResult.exitCode === 0) {
+                let content = '';
+                if (typeof catResult.stdout === 'function') {
+                  content = await catResult.stdout();
+                } else {
+                  content = catResult.stdout || '';
+                }
+
+                const relativePath = filePath.replace(/^\.\//, '');
+                filesContent[relativePath] = content;
+              }
+            }
+          }
+        } catch (parseError) {
+          console.debug('Error reading file:', filePath, parseError);
+          continue;
+        }
+      }
+
+      // Get directory structure
+      const treeResult = await activeSandboxInstance.runCommand({
+        cmd: 'find',
+        args: ['.', '-type', 'd', '-not', '-path', '*/node_modules*', '-not', '-path', '*/.git*', '-not', '-path', '*/.next*'],
+        cwd
+      });
+
+      if (treeResult.exitCode === 0) {
+        let treeOutput = '';
+        if (typeof treeResult.stdout === 'function') {
+          treeOutput = await treeResult.stdout();
+        } else {
+          treeOutput = treeResult.stdout || '';
+        }
+
+        const dirs = treeOutput.split('\n').filter((d: string) => d.trim());
+        structure = dirs.slice(0, 50).join('\n');
+      }
+
+    } else {
+      // V1 Sandbox - use runCommand
+      console.log('[get-sandbox-files] Using V1 sandbox command-based file reading');
+
+      const findResult = await activeSandboxInstance.runCommand({
+        cmd: 'find',
+        args: [
+          '.',
+          '-name', 'node_modules', '-prune', '-o',
+          '-name', '.git', '-prune', '-o',
+          '-name', 'dist', '-prune', '-o',
+          '-name', 'build', '-prune', '-o',
+          '-type', 'f',
+          '(',
+          '-name', '*.jsx',
+          '-o', '-name', '*.js',
+          '-o', '-name', '*.tsx',
+          '-o', '-name', '*.ts',
+          '-o', '-name', '*.css',
+          '-o', '-name', '*.json',
+          ')',
+          '-print'
+        ]
+      });
+
+      if (findResult.exitCode !== 0) {
+        throw new Error('Failed to list files');
+      }
+
+      const stdoutContent = findResult.stdout || '';
+      const fileList = stdoutContent.split('\n').filter((f: string) => f.trim());
+      console.log('[get-sandbox-files] Found', fileList.length, 'files');
+
+      for (const filePath of fileList) {
+        try {
+          const statResult = await activeSandboxInstance.runCommand({
+            cmd: 'stat',
+            args: ['-f', '%z', filePath]
+          });
+
+          if (statResult.exitCode === 0) {
+            const fileSize = parseInt(statResult.stdout || '0');
+
+            if (fileSize < 100000) {
+              const catResult = await activeSandboxInstance.runCommand({
+                cmd: 'cat',
+                args: [filePath]
+              });
+
+              if (catResult.exitCode === 0) {
+                const relativePath = filePath.replace(/^\.\//, '');
+                filesContent[relativePath] = catResult.stdout || '';
+              }
+            }
+          }
+        } catch (parseError) {
+          console.debug('Error reading file:', filePath, parseError);
+          continue;
+        }
+      }
+
+      // Get directory structure
+      const treeResult = await activeSandboxInstance.runCommand({
+        cmd: 'find',
+        args: ['.', '-type', 'd', '-not', '-path', '*/node_modules*', '-not', '-path', '*/.git*']
+      });
+
+      if (treeResult.exitCode === 0) {
+        const dirs = (treeResult.stdout || '').split('\n').filter((d: string) => d.trim());
+        structure = dirs.slice(0, 50).join('\n');
+      }
     }
     
     // Build enhanced file manifest

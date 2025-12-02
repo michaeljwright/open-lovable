@@ -19,6 +19,33 @@ export async function POST() {
     }
 
     console.log('[create-zip] Creating project zip...');
+    // Before zipping, write out puck files if available via create-site
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/create-site`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'Starter site' })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const dataJson = JSON.stringify(json?.puck?.data || { content: [], root: { props: { title: 'My Site', theme: 'light' } }, zones: {} }, null, 2);
+        const configJs = json?.puck?.configJs || '';
+
+        if (provider && provider.sandbox) {
+          // Write files in provider sandbox working dir
+          const cwd = isVercel ? '/vercel/sandbox' : '/home/user/app';
+          await provider.sandbox.runCommand({ cmd: 'bash', args: ['-c', `mkdir -p ${cwd}/puck && printf %s "$DATA" > ${cwd}/puck/data.json`], env: { DATA: dataJson } });
+          await provider.sandbox.runCommand({ cmd: 'bash', args: ['-c', `printf %s "$CONFIG" > ${cwd}/puck/puck-config.js`], env: { CONFIG: configJs } });
+          // Create /edit page stub if missing
+          await provider.sandbox.runCommand({ cmd: 'bash', args: ['-c', `mkdir -p ${cwd}/app/edit && [ -f ${cwd}/app/edit/page.tsx ] || printf %s "$PAGE" > ${cwd}/app/edit/page.tsx`], env: { PAGE: `"use client";export default function Page(){return <div>Edit available in repo build.</div>}` } });
+        } else if (sandbox) {
+          await sandbox.runCommand({ cmd: 'bash', args: ['-c', `mkdir -p puck && printf %s "$DATA" > puck/data.json`], env: { DATA: dataJson } });
+          await sandbox.runCommand({ cmd: 'bash', args: ['-c', `printf %s "$CONFIG" > puck/puck-config.js`], env: { CONFIG: configJs } });
+        }
+      }
+    } catch (e) {
+      console.warn('[create-zip] Failed to pre-write puck files:', e);
+    }
 
     // Detect provider type
     const isE2B = provider && provider.constructor.name === 'E2BProvider';

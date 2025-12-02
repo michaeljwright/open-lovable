@@ -44,12 +44,12 @@ export async function POST(req: NextRequest) {
     
     // The Firecrawl v4 API might return data directly without a success flag
     // Check if we have data with screenshot
-    if (scrapeResult && scrapeResult.screenshot) {
+    if (scrapeResult && (scrapeResult as any).screenshot) {
       // Direct screenshot response
       return NextResponse.json({
         success: true,
-        screenshot: scrapeResult.screenshot,
-        metadata: scrapeResult.metadata || {}
+        screenshot: (scrapeResult as any).screenshot,
+        metadata: (scrapeResult as any).metadata || {}
       });
     } else if ((scrapeResult as any)?.data?.screenshot) {
       // Nested data structure

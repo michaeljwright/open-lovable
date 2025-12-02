@@ -256,8 +256,8 @@ export const encryptText = (
 
 export default function HomeHeroTitle() {
   return (
-    <h1 className="text-title-h1 mx-auto text-center [&_span]:text-heat-100 mb-12 lg:mb-16">
-     Open Lovable <span>v2</span>
+    <h1 id="penultimate-title" className="text-title-h3 mx-auto text-center [&_span]:text-heat-100 mt-18 mb-12 lg:mb-16" style={{ fontWeight: 900 }}>
+     <span>Penultimate</span>
     </h1>
   );
 }
